@@ -772,6 +772,49 @@ else
     info "Port $PORT di luar rentang port acak $LO-$HI: tidak perlu dipesan"
 fi
 
+# Login berbasis password yang masih "yes" di file lain: 50-cloud-init.conf
+# (cloud-init, kalau provider menyetel ssh_pwauth: true) atau tambahan provider
+# di sshd_config. Sekarang kalah oleh $SSHD_CONF yang dibaca lebih dulu, tapi
+# aktif lagi kalau file itu hilang, dan di dalam blok Match nilainya menimpa
+# pengaturan global. Hanya yes -> no, jadi tidak bisa mengunci.
+# Semua bentuk yang diterima sshd: "=" atau spasi, huruf besar/kecil, "yes"
+# berkutip, komentar di ujung baris. Grup 1 = kunci + pemisah, 4 = sisa baris.
+PW_KUNCI='^([[:space:]]*(PasswordAuthentication|KbdInteractiveAuthentication|ChallengeResponseAuthentication)([[:space:]]*=[[:space:]]*|[[:space:]]+))'
+PW_SISA='(([[:space:]]+#.*)?[[:space:]]*)$'
+PW_YA="${PW_KUNCI}\"?yes\"?${PW_SISA}"
+PW_UBAH=0
+for f in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
+    [ -f "$f" ] && [ "$f" != "$SSHD_CONF" ] || continue
+    if grep -qiE "$PW_YA" "$f" 2>/dev/null; then
+        grep -niE "$PW_YA" "$f" | while IFS= read -r l; do info "$f:$l"; done
+        run "Ubah login password 'yes' jadi 'no' di $f" sed -i -E "s/$PW_YA/\1no\4/I" "$f"
+        PW_UBAH=1
+    fi
+done
+# cloud-init menulis ulang 50-cloud-init.conf dari ssh_pwauth saat menganggap
+# VPS instance baru (mis. setelah migrasi dari panel); false membuatnya "no".
+# Reset password dari panel tidak terpengaruh (ssh_pwauth hanya mengatur sshd).
+CLOUD_PW=/etc/cloud/cloud.cfg.d/99-ssh-tanpa-password.cfg
+if [ -d /etc/cloud/cloud.cfg.d ]; then
+    ISI_CLOUD_PW='# Dari setup-awal-vps: login password SSH tetap mati walaupun cloud-init
+# menulis ulang /etc/ssh/sshd_config.d/50-cloud-init.conf (instance baru).
+ssh_pwauth: false'
+    if [ "$(cat "$CLOUD_PW" 2>/dev/null)" = "$ISI_CLOUD_PW" ]; then
+        ok "cloud-init tidak akan menyalakan login password SSH ($CLOUD_PW)"
+    else
+        tulis "Cegah cloud-init menyalakan lagi login password SSH" "$CLOUD_PW" 644 <<<"$ISI_CLOUD_PW"
+    fi
+    # File cloud.cfg.d lain yang dibaca belakangan bisa menimpa: cek nilai gabungannya.
+    if [ $DRY = 0 ]; then
+        pw=$(python3 -c 'from cloudinit.stages import Init; i = Init(); i.read_cfg(); print(i.cfg.get("ssh_pwauth"))' 2>/dev/null || true)
+        case $pw in
+            False) ok "Nilai gabungan cloud-init: ssh_pwauth false";;
+            "")    info "Nilai gabungan ssh_pwauth cloud-init tidak bisa dibaca; cek: grep -rn ssh_pwauth /etc/cloud/";;
+            *)     awas "Nilai gabungan ssh_pwauth cloud-init: $pw (file lain di /etc/cloud/cloud.cfg.d menimpa $CLOUD_PW)";;
+        esac
+    fi
+fi
+
 # Transisi dua tahap supaya tidak terkunci: di sini dipasang Port 22 DAN
 # Port $PORT, jadi port 22 tetap listen sebagai jalan kembali untuk $USERNAME
 # (login root sudah mati sejak sini). Konfigurasi akhir (hanya $PORT) baru
@@ -791,6 +834,9 @@ else
 fi
 pastikan_ssh "permitrootlogin no" "passwordauthentication no" "kbdinteractiveauthentication no"
 pastikan_allowusers
+# pasang_ssh tidak me-restart kalau konfigurasinya sudah sesuai: muat ulang
+# supaya perubahan "yes" -> "no" di blok Match ikut berlaku. sshd -t sudah lolos.
+[ $PW_UBAH = 0 ] || run "Muat ulang sshd (perubahan login password di file lain)" systemctl try-reload-or-restart ssh
 tampil_ssh
 
 # ---------------------------------------------------------------------------

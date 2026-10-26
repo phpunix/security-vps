@@ -98,7 +98,7 @@ Script menanyakan nama user, port SSH, ukuran swap, dan whitelist IP, lalu:
 | 3 | **Uji login user di port 22** dari terminal baru di PC |
 | 4 | Swap |
 | 5 | UFW: port 22 (sementara) + port baru, rate-limit, whitelist opsional |
-| 6 | Hardening SSH: listen di port 22 **dan** port baru (dua tahap); hanya user baru yang boleh login SSH (`AllowUsers`) |
+| 6 | Hardening SSH: listen di port 22 **dan** port baru (dua tahap); hanya user baru yang boleh login SSH (`AllowUsers`); `yes` untuk login password di file SSH lain (mis. `50-cloud-init.conf`) jadi `no`, cloud-init dicegah menyalakannya lagi |
 | 7 | **Uji login user di port baru** dari terminal baru di PC |
 | 8 | Konfigurasi akhir (hanya port baru), tutup port 22 |
 | 9 | fail2ban + uji ban dan uji deteksi login gagal |
@@ -146,6 +146,12 @@ Pengaman lain:
   - Hapus sesi tersimpan di klien (MobaXterm, Dolphin, VS Code, rsync) yang
     masih memakai root atau user bawaan: tiap percobaannya dihitung login
     gagal dan bisa membuat IP-mu ke-ban.
+- **Login password di file provider:** `PasswordAuthentication yes` di
+  `50-cloud-init.conf` atau `sshd_config` sebenarnya sudah kalah oleh
+  `00-hardening.conf`, tapi aktif lagi kalau file itu hilang, dan di dalam
+  blok `Match` tetap berlaku (tidak terlihat di `sshd -T`). Script mengubahnya
+  jadi `no` dan memasang `ssh_pwauth: false` untuk cloud-init, supaya tidak
+  ditulis ulang saat cloud-init menganggap VPS sebagai instance baru.
 - **Whitelist IP (opsional):** IP yang sedang kamu pakai bisa dibebaskan dari
   rate-limit UFW dan ban fail2ban, berguna untuk SFTP dari file manager
   (Dolphin dsb.) yang membuka banyak koneksi sekaligus. IP VPN biasanya dipakai
@@ -198,7 +204,8 @@ last -n 10 -a                                          # kalau tidak ada: sudo a
 Perhatikan "Login 7 hari terakhir": semua login harus memakai key-mu, dari IP
 yang kamu kenali.
 
-`cek-keamanan.sh` memeriksa: root/password login mati, `AllowUsers` (atau `AllowGroups`), keepalive, izin key,
+`cek-keamanan.sh` memeriksa: root/password login mati (juga tidak ada `yes`
+tersisa di file SSH lain), `AllowUsers` (atau `AllowGroups`), keepalive, izin key,
 sudo tanpa password hanya untuk root, aturan UFW (hanya port SSH), port 22
 tertutup, port yang terbuka ke luar, jail fail2ban aktif dengan port yang benar
 dan **deteksinya terbukti**, riwayat ban bertingkat, update. Kode keluar: `0`

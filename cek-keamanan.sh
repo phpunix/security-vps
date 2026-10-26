@@ -49,6 +49,19 @@ if [ $ROOT = 1 ]; then
     if [ -n "$allow" ]; then ok "allowusers $allow (hanya user ini yang boleh login SSH)"
     elif [ -n "$allowg" ]; then ok "allowgroups $allowg (hanya anggota grup ini yang boleh login SSH)"
     else awas "allowusers tidak diatur: semua user yang punya key bisa login SSH"; fi
+    # Login password "yes" di file lain (mis. 50-cloud-init.conf): sekarang kalah
+    # oleh 00-hardening.conf yang dibaca lebih dulu, tapi aktif lagi kalau file
+    # itu hilang, dan di dalam blok Match langsung berlaku (tidak tampil di sshd -T).
+    # Semua bentuk yang diterima sshd: "=" atau spasi, huruf besar/kecil, "yes"
+    # berkutip, komentar di ujung baris.
+    re='^[[:space:]]*(PasswordAuthentication|KbdInteractiveAuthentication|ChallengeResponseAuthentication)([[:space:]]*=[[:space:]]*|[[:space:]]+)"?yes"?([[:space:]]+#.*)?[[:space:]]*$'
+    pw_ya=$($S sh -c 'grep -HniE "$1" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null' _ "$re")
+    if [ -z "$pw_ya" ]; then ok "Tidak ada login password 'yes' tersisa di file konfigurasi SSH"
+    else
+        awas "Login password masih 'yes' di file (aktif kalau 00-hardening.conf hilang, atau di blok Match):"
+        sed 's/^/          /' <<<"$pw_ya"
+        info "Perbaiki: ubah jadi 'no' (jalankan ulang setup), lalu: sudo sshd -t && sudo systemctl reload ssh"
+    fi
 else
     info "[root] sshd -T dilewati"
 fi
