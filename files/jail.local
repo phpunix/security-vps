@@ -1,0 +1,30 @@
+# /etc/fail2ban/jail.local
+# Konfigurasi lokal fail2ban (menimpa jail.conf & jail.d/defaults-debian.conf).
+# Backend systemd journal dan aksi nftables mengikuti defaults-debian.conf.
+
+[DEFAULT]
+# Jangan pernah ban localhost (tunnel SSH ke web lokal datang dari sini).
+ignoreip = 127.0.0.1/8 ::1
+# 5 kali gagal dalam 10 menit -> ban 1 jam.
+maxretry = 5
+findtime = 10m
+bantime = 1h
+# Pelaku berulang: lama ban berlipat (1j, 2j, 4j, ...) sampai maksimal 1 minggu.
+bantime.increment = true
+bantime.factor = 2
+bantime.maxtime = 1w
+
+[sshd]
+enabled = true
+# "normal", bukan "aggressive": aggressive menghitung satu percobaan login root
+# dari sesi lama sebagai 5 kegagalan sekaligus -> pemilik server bisa ke-ban sendiri.
+mode = normal
+# OpenSSH >= 9.8 (Debian 13: OpenSSH 10) menulis kegagalan login lewat proses
+# "sshd-session", bukan "sshd". Filter bawaan versi lama hanya mengenali "sshd"
+# (_daemon) dan unit "sshd.service" (padahal Ubuntu/Debian: ssh.service), jadi
+# jail tetap "aktif" tapi tidak pernah mem-ban. Kedua pola diperluas di sini.
+filter = sshd[mode=%(mode)s, _daemon="sshd(?:-session)?"]
+journalmatch = _SYSTEMD_UNIT=ssh.service + _SYSTEMD_UNIT=sshd.service + _COMM=sshd + _COMM=sshd-session
+# WAJIB sama dengan Port di sshd. "port = ssh" berarti 22, sehingga ban hanya
+# memblokir port 22 dan penyerang tetap bisa mencoba di port SSH yang asli.
+port = 2222

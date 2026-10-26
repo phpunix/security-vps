@@ -1,0 +1,34 @@
+# /etc/fail2ban/jail.d/sshd-lambat.local
+#
+# Penyerang "low and slow" mencoba ~1x tiap beberapa menit, jadi selalu di
+# bawah ambang jail sshd (5 gagal / 10 menit) dan tidak pernah diblokir.
+# Jail ini memakai filter yang sama dengan jendela 1 hari.
+#
+# Kunci SSH saja yang bisa login (password mati), jadi IP pemilik tidak perlu
+# dikecualikan: login dengan key yang benar tidak dihitung gagal. Kalau tetap
+# mau, tambahkan IP di ignoreip (hati-hati: IP VPN dipakai bersama banyak
+# orang, sehingga penyerang dari IP yang sama ikut lolos).
+
+[sshd-lambat]
+enabled  = true
+# _daemon & journalmatch: juga kenali "sshd-session" (OpenSSH >= 9.8), lihat jail.local.
+filter   = sshd[mode=normal, _daemon="sshd(?:-session)?"]
+journalmatch = _SYSTEMD_UNIT=ssh.service + _SYSTEMD_UNIT=sshd.service + _COMM=sshd + _COMM=sshd-session
+backend  = systemd
+# Sama dengan Port di sshd.
+port     = 2222
+maxretry = 10
+findtime = 1d
+bantime  = 1w
+ignoreip = 127.0.0.1/8 ::1
+
+# IP yang berulang kali diblokir (oleh jail mana pun) diblokir dari SEMUA
+# port. Membaca log fail2ban sendiri, jadi backend file, bukan journal.
+[recidive]
+enabled  = true
+backend  = auto
+logpath  = /var/log/fail2ban.log
+maxretry = 3
+findtime = 1d
+bantime  = 1w
+ignoreip = 127.0.0.1/8 ::1

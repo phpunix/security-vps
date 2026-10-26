@@ -1,0 +1,27 @@
+# Panduan Agen - setup-awal-vps
+
+Script pengamanan awal VPS Ubuntu/Debian baru (`setup.sh`, dijalankan pemilik
+sebagai root) dan audit `cek-keamanan.sh` (hanya membaca). Lihat `README.md`.
+
+## Aturan anti-terkunci
+
+- Agen **tidak** menjalankan `setup.sh` tanpa `--dry-run`: script mengubah SSH
+  dan firewall, butuh root, dan uji login dari luar hanya bisa dilakukan pemilik.
+- Kalau mengubah script, pertahankan:
+  - pindah port **dua tahap** (port 22 + port baru dulu; konfigurasi akhir dan
+    penutupan port 22 hanya setelah login lewat port baru terbukti),
+  - `sshd -t` sebelum menerapkan, verifikasi `sshd -T` dan `ss` sesudahnya,
+  - rollback **tidak pernah** menghapus `00-hardening.conf` dan tidak pernah
+    mengaktifkan lagi `PasswordAuthentication` atau `PermitRootLogin`,
+  - key root baru dinonaktifkan setelah login user + sudo terbukti,
+  - Ubuntu memakai socket activation (`daemon-reload` + restart `ssh.socket`),
+    Debian `systemctl restart ssh`.
+- Uji perubahan dengan `bash -n` dan `--dry-run`; sebutkan apa yang belum diuji
+  di VPS sungguhan (tabel "Teruji" di README).
+- Jangan mengubah firewall di panel provider atas nama pemilik.
+- Jangan membuat, menebak, atau menyimpan password atas nama pemilik.
+
+## Konvensi
+
+- Komunikasi dalam bahasa Indonesia.
+- Git: jangan commit kecuali diminta, jangan push, jangan menambah remote.

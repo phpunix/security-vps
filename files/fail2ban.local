@@ -1,0 +1,9 @@
+# /etc/fail2ban/fail2ban.local
+# Pengaturan daemon fail2ban (menimpa fail2ban.conf).
+
+[DEFAULT]
+# Ban bertingkat di jail.local (bantime.increment: 1j, 2j, 4j, ... maks 1 minggu)
+# menghitung "ban ke berapa" dari riwayat di database. Default dbpurgeage 1d
+# menghapus riwayat itu setelah sehari, jadi penyerang yang kembali besoknya
+# mulai lagi dari ban 1 jam. Simpan 30 hari (harus >= bantime.maxtime).
+dbpurgeage = 30d
