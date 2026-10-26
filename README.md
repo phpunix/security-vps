@@ -98,7 +98,7 @@ Script menanyakan nama user, port SSH, ukuran swap, dan whitelist IP, lalu:
 | 3 | **Uji login user di port 22** dari terminal baru di PC |
 | 4 | Swap |
 | 5 | UFW: port 22 (sementara) + port baru, rate-limit, whitelist opsional |
-| 6 | Hardening SSH: listen di port 22 **dan** port baru (dua tahap) |
+| 6 | Hardening SSH: listen di port 22 **dan** port baru (dua tahap); hanya user baru yang boleh login SSH (`AllowUsers`) |
 | 7 | **Uji login user di port baru** dari terminal baru di PC |
 | 8 | Konfigurasi akhir (hanya port baru), tutup port 22 |
 | 9 | fail2ban + uji ban dan uji deteksi login gagal |
@@ -116,7 +116,7 @@ sudo true && echo SUDO OK
 Biarkan sesi uji itu **terbuka**, lalu jawab `ya`. Jawaban saja tidak cukup:
 script memeriksa log sistem bahwa user itu benar-benar login dengan key di
 port yang diuji dan menjalankan `sudo true`. Uji "root harus ditolak"
-(`ssh -p PORT root@IP-VPS`) cukup **sekali**: tiap percobaan dihitung 2
+(`ssh -p PORT root@IP-VPS`) cukup **sekali**: tiap percobaan dihitung
 kegagalan oleh fail2ban.
 
 **Kalau uji port baru gagal** (biasanya firewall panel belum membuka port
@@ -131,7 +131,21 @@ Pengaman lain:
 - Status tiap aksi tampil `[✓] BERHASIL` / `[✗] GAGAL`; kalau berhenti, alasannya
   ditulis di baris `BERHENTI`.
 - Menjalankan ulang aman: langkah yang sudah beres dilewati. Mengganti port
-  setelah setup selesai ditolak (bisa mengunci).
+  atau user utama setelah setup selesai ditolak (bisa mengunci); user yang
+  kamu tambahkan sendiri di baris `AllowUsers` dipertahankan. Kalau
+  `00-hardening.conf` berbeda dari versi script ini (versi lama, atau diubah
+  tangan), run ulang lewat transisi + uji login langkah 7 lagi.
+- **User bawaan cloud** (`ubuntu`/`debian`/`admin`, dibuat sebagian provider
+  dengan key-mu dan sering dengan sudo tanpa password): mulai langkah 6
+  `AllowUsers` menolak login SSH mereka; script menyebutkannya di langkah 0.
+  Sudo tanpa password (`NOPASSWD`) miliknya tidak diubah script:
+  `cek-keamanan.sh` menandainya `AWAS` beserta cara memperbaikinya.
+  - Fitur "SSH lewat browser" provider yang login dengan user bawaan (mis. EC2
+    Instance Connect, SSH-in-browser GCP) ikut tertutup. Console VNC/serial
+    tidak terpengaruh karena tidak lewat SSH.
+  - Hapus sesi tersimpan di klien (MobaXterm, Dolphin, VS Code, rsync) yang
+    masih memakai root atau user bawaan: tiap percobaannya dihitung login
+    gagal dan bisa membuat IP-mu ke-ban.
 - **Whitelist IP (opsional):** IP yang sedang kamu pakai bisa dibebaskan dari
   rate-limit UFW dan ban fail2ban, berguna untuk SFTP dari file manager
   (Dolphin dsb.) yang membuka banyak koneksi sekaligus. IP VPN biasanya dipakai
@@ -184,7 +198,7 @@ last -n 10 -a                                          # kalau tidak ada: sudo a
 Perhatikan "Login 7 hari terakhir": semua login harus memakai key-mu, dari IP
 yang kamu kenali.
 
-`cek-keamanan.sh` memeriksa: root/password login mati, keepalive, izin key,
+`cek-keamanan.sh` memeriksa: root/password login mati, `AllowUsers` (atau `AllowGroups`), keepalive, izin key,
 sudo tanpa password hanya untuk root, aturan UFW (hanya port SSH), port 22
 tertutup, port yang terbuka ke luar, jail fail2ban aktif dengan port yang benar
 dan **deteksinya terbukti**, riwayat ban bertingkat, update. Kode keluar: `0`
@@ -207,4 +221,6 @@ sudo bash setup.sh        # opsional; jawab port yang SAMA, langkah yang beres d
 | IP sendiri ke-ban | `sudo fail2ban-client unban IP-KAMU`; alasannya: `sudo grep IP-KAMU /var/log/fail2ban.log` |
 | `sshd -t` error | Jangan restart apa pun; perbaiki file yang disebut di pesan error |
 | Lupa password sudo user | Console provider sebagai root: `passwd USER` |
+| User baru (mis. `deploy`) ditolak SSH padahal key benar | `AllowUsers`: tambahkan namanya di baris `AllowUsers` di `/etc/ssh/sshd_config.d/00-hardening.conf`, lalu `sudo sshd -t && sudo systemctl reload ssh`. Log: `User deploy ... not listed in AllowUsers`. Run ulang `setup.sh` mempertahankan user tambahan ini |
+| `AWAS` sudo tanpa password (`NOPASSWD`) | Biasanya user bawaan cloud di `/etc/sudoers.d/90-cloud-init-users`. Hapus barisnya: `sudo visudo -f FILE`; user yang tidak dipakai: `sudo deluser --remove-home NAMA` (setelah login user-mu + sudo terbukti) |
 | Script berhenti di tengah | Baca baris `BERHENTI` dan log (`/root/setup-vps-*.log`), perbaiki, jalankan ulang |

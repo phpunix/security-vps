@@ -14,6 +14,13 @@ sebagai root) dan audit `cek-keamanan.sh` (hanya membaca). Lihat `README.md`.
   - rollback **tidak pernah** menghapus `00-hardening.conf` dan tidak pernah
     mengaktifkan lagi `PasswordAuthentication` atau `PermitRootLogin`,
   - key root baru dinonaktifkan setelah login user + sudo terbukti,
+  - `AllowUsers` hanya di konfigurasi transisi (langkah 6) dan akhir, tidak di
+    konfigurasi awal/rollback (`KONF_AWAL`); karena `AllowUsers` dari beberapa
+    file digabung, `sshd -T | grep ^allowusers` harus persis isi baris
+    `AllowUsers` di `00-hardening.conf` (user tambahan pemilik dipertahankan),
+  - transisi + uji login hanya boleh dilompati kalau `00-hardening.conf` **sama
+    persis** dengan konfigurasi akhir; jangan dilonggarkan (langkah 3/7
+    dilewati saat port 22 tutup, langkah 10 hanya bertanya),
   - Ubuntu memakai socket activation (`daemon-reload` + restart `ssh.socket`),
     Debian `systemctl restart ssh`.
 - Uji perubahan dengan `bash -n` dan `--dry-run`; sebutkan apa yang belum diuji

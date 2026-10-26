@@ -400,6 +400,44 @@ AK=$H/.ssh/authorized_keys
 if [ $RK_ADA = 0 ] && [ $DRY = 0 ] && [ ! -s "$AK" ]; then
     gagal "Tidak ada key SSH: $RK maupun $AK kosong. Tambahkan key di panel provider dulu."
 fi
+# ALLOW: isi AllowUsers. Run ulang mempertahankan daftar dari run sebelumnya,
+# termasuk user yang ditambahkan pemilik (mis. deploy), asalkan $USERNAME ada
+# di dalamnya. Tanpa $USERNAME berarti ganti user: tidak didukung, karena
+# AllowUsers baru langsung menolak user lama begitu diterapkan.
+ALLOW=$USERNAME
+# diizinkan USER: USER ada di ALLOW (nama persis, atau USER@host). Tanpa pipe
+# (grep -q + pipefail bisa gagal karena SIGPIPE) dan tanpa glob (pola "ops*").
+diizinkan() {
+    local e; local -a d; read -ra d <<<"$ALLOW"
+    for e in "${d[@]}"; do [[ $e == "$1" || $e == "$1"@* ]] && return 0; done
+    return 1
+}
+if [ -f "$SSHD_CONF" ]; then
+    lama_allow=$(sed -n 's/^AllowUsers[[:space:]]\+//p' "$SSHD_CONF" | tr -s ' \t' '\n' | awk 'NF && !s[$0]++' | paste -sd' ' || true)
+    if [ -n "$lama_allow" ]; then
+        # Disalin ke sed (KONF): hanya karakter pola AllowUsers yang wajar.
+        read -ra entri <<<"$lama_allow"
+        for e in "${entri[@]}"; do
+            [[ $e =~ ^!?[A-Za-z0-9._*?-]+(@[A-Za-z0-9.:/*?_-]+)?$ ]] \
+                || gagal "AllowUsers di $SSHD_CONF berisi entri yang tidak dikenali: $e. Perbaiki manual lalu jalankan ulang."
+        done
+        ALLOW=$lama_allow
+        diizinkan "$USERNAME" \
+            || gagal "SSH sudah dibatasi untuk $lama_allow (AllowUsers di $SSHD_CONF), tanpa $USERNAME. Jalankan ulang dengan user itu, atau tambahkan $USERNAME di baris AllowUsers."
+        [ "$ALLOW" = "$USERNAME" ] || info "AllowUsers dari run sebelumnya dipertahankan: $ALLOW"
+    fi
+fi
+# User lain yang punya key (mis. user bawaan cloud "ubuntu"/"debian"/"admin")
+# ditolak SSH mulai langkah 6. Sudo tanpa password miliknya tidak diubah script;
+# cek-keamanan.sh di langkah 12 menandainya beserta cara memperbaikinya.
+LAIN=""
+while IFS=: read -r n _ _ _ _ h _; do
+    if [ "$n" != root ] && [ -s "$h/.ssh/authorized_keys" ] && ! diizinkan "$n"; then LAIN+=" $n"; fi
+done < <(getent passwd)
+if [ -n "$LAIN" ]; then
+    info "User lain dengan key SSH:$LAIN. Mulai langkah 6 hanya $ALLOW yang boleh login SSH"
+    info "(AllowUsers); sesi yang sedang terbuka tidak terputus. Setelah itu masuk sebagai $USERNAME."
+fi
 
 tanya PORT "Port SSH baru (1024-65535)" 2222
 [[ $PORT =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] || gagal "Port tidak valid: $PORT"
@@ -457,13 +495,18 @@ yakin "Lanjut?" y || exit 0
 #             awal langkah 1 dan menjadi tujuan rollback. Rollback TIDAK PERNAH
 #             menghapus hardening: tanpa file ini berlaku default provider, mis.
 #             50-cloud-init.conf "PasswordAuthentication yes" + root ber-password.
-# KONF_TRANSISI : Port 22 + Port $PORT, root mati (langkah 6-7).
+#             Tanpa AllowUsers: $USERNAME belum ada di langkah 1, dan saat
+#             rollback pemilik mungkin perlu masuk lagi lewat root/user bawaan.
+# KONF_TRANSISI : Port 22 + Port $PORT, root mati, AllowUsers $ALLOW (langkah 6-7;
+#             login $USERNAME sudah terbukti di langkah 3).
 # KONF      : konfigurasi akhir, hanya Port $PORT (langkah 8).
-KONF=$(sed "s/^Port .*/Port $PORT/" "$REPO/files/00-hardening.conf")
-KONF_TRANSISI=$(sed "s/^Port .*/# SEMENTARA (setup-awal-vps): Port 22 dihapus setelah login port $PORT dikonfirmasi.\nPort 22\nPort $PORT/" \
-    "$REPO/files/00-hardening.conf")
+ALLOW_SED=${ALLOW//\//\\/}   # "/" dari CIDR (user@10.0.0.0/8) adalah pemisah sed
+KONF=$(sed -e "s/^Port .*/Port $PORT/" -e "s/^AllowUsers .*/AllowUsers $ALLOW_SED/" "$REPO/files/00-hardening.conf")
+KONF_TRANSISI=$(sed -e "s/^Port .*/# SEMENTARA (setup-awal-vps): Port 22 dihapus setelah login port $PORT dikonfirmasi.\nPort 22\nPort $PORT/" \
+    -e "s/^AllowUsers .*/AllowUsers $ALLOW_SED/" "$REPO/files/00-hardening.conf")
 KONF_AWAL=$(sed -e "s/^Port .*/# AWAL (setup-awal-vps): login password mati; root masih boleh dengan key sampai langkah 6.\nPort 22/" \
-    -e "s/^PermitRootLogin .*/PermitRootLogin prohibit-password/" "$REPO/files/00-hardening.conf")
+    -e "s/^PermitRootLogin .*/PermitRootLogin prohibit-password/" \
+    -e "s/^AllowUsers .*/# AllowUsers $USERNAME dipasang mulai langkah 6./" "$REPO/files/00-hardening.conf")
 SSH_ADA=0; SSH_LAMA=""
 
 kembalikan_ssh() {
@@ -527,6 +570,20 @@ pastikan_ssh() {
         grep -rniE "^\s*$pasangan\s" /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ | sed 's/^/      │ /' | tee -a "$LOG" || true
     done
     gagal "Pengaturan SSH efektif tidak sesuai (${beda# }); ada file lain yang menimpanya. Perbaiki file di atas lalu jalankan ulang."
+}
+# AllowUsers dari beberapa file DIGABUNG (bukan nilai pertama yang menang) dan
+# sshd -T menulis satu baris per entri, jadi pastikan_ssh tidak cukup: file lain
+# (mis. dari provider) bisa menambah user bawaan cloud. Isinya harus persis
+# $ALLOW, yaitu hanya dari $SSHD_CONF.
+pastikan_allowusers() {
+    [ $DRY = 0 ] || return 0
+    local au mau
+    au=$(sshd -T 2>/dev/null | sed -n 's/^allowusers //p' | tr ' ' '\n' | awk 'NF' | sort -u | paste -sd' ')
+    mau=$(tr ' ' '\n' <<<"$ALLOW" | sort -u | paste -sd' ')
+    if [ "$au" = "$mau" ]; then ok "Hanya $ALLOW yang boleh login SSH (AllowUsers)"; return 0; fi
+    awas "AllowUsers efektif: ${au:-tidak ada (semua user boleh login)}. Ditetapkan di:"
+    grep -rniE '^\s*AllowUsers\s' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ | sed 's/^/      │ /' | tee -a "$LOG" || true
+    gagal "AllowUsers harus persis: $ALLOW (hanya dari $SSHD_CONF). Perbaiki file di atas lalu jalankan ulang."
 }
 tampil_ssh() {
     [ $DRY = 0 ] || return 0
@@ -719,6 +776,12 @@ fi
 # Port $PORT, jadi port 22 tetap listen sebagai jalan kembali untuk $USERNAME
 # (login root sudah mati sejak sini). Konfigurasi akhir (hanya $PORT) baru
 # dipasang di langkah 8, setelah login lewat port baru dikonfirmasi.
+# Lompat langsung ke konfigurasi akhir HANYA kalau isinya sama persis: itu
+# berarti login dengan konfigurasi ini sudah terbukti di run sebelumnya. Isi
+# lain (versi script lama tanpa AllowUsers, file buatan tangan) lewat transisi
+# + uji login langkah 7, karena langkah 3 dan 7 dilewati kalau port 22 sudah
+# tutup, dan langkah 10 hanya bertanya. sshd sempat listen di 22, tapi tanpa
+# aturan UFW 22 port itu tidak terbuka ke luar.
 if [ $DRY = 0 ] && [ "$(cat "$SSHD_CONF" 2>/dev/null)" = "$KONF" ] && ! aturan22; then
     ok "Konfigurasi SSH akhir (hanya port $PORT) sudah terpasang di run sebelumnya"
     pasang_ssh "Pasang konfigurasi SSH akhir (hanya Port $PORT)" "$KONF" "$PORT"
@@ -727,6 +790,7 @@ else
     [ $DRY = 1 ] || ok "sshd listen di port 22 (sementara) dan $PORT"
 fi
 pastikan_ssh "permitrootlogin no" "passwordauthentication no" "kbdinteractiveauthentication no"
+pastikan_allowusers
 tampil_ssh
 
 # ---------------------------------------------------------------------------
@@ -738,7 +802,7 @@ else
     info "Di PC, buka SESI BARU lagi (sesi root ini tetap terbuka):"
     info "    ssh -p $PORT $USERNAME@$IP     # harus BERHASIL, lalu: sudo true && echo SUDO OK"
     info "    ssh -p $PORT root@$IP          # harus DITOLAK (Permission denied) - cukup SEKALI:"
-    info "      tiap percobaan root dihitung 2 kegagalan oleh fail2ban (5 = IP-mu ke-ban 1 jam)."
+    info "      tiap percobaan root dihitung kegagalan oleh fail2ban (5 = IP-mu ke-ban 1 jam)."
     info "Biarkan sesi $USERNAME itu terbuka sampai kamu menjawab: script memeriksanya di log sistem."
     info "Kalau gagal konek: cek firewall panel provider untuk TCP $PORT."
     if ! konfirmasi_login "Login $USERNAME lewat port $PORT DAN sudo berhasil?" "$PORT" "$SEJAK"; then
@@ -764,7 +828,7 @@ else
     # Uji root bersifat pelengkap: penolakan hanya dilaporkan, tidak menghentikan.
     if [ $DRY = 0 ]; then
         if journalctl -u ssh --since "$SEJAK" --no-pager -o cat 2>/dev/null \
-               | grep -E 'ROOT LOGIN REFUSED|authenticating user root ' >/dev/null; then
+               | grep -E 'ROOT LOGIN REFUSED|authenticating user root |User root from .* not listed in AllowUsers' >/dev/null; then
             ok "Uji root terbukti ditolak (tercatat di log sistem)"
         else
             info "Uji 'ssh -p $PORT root@...' tidak terlihat di log (tidak wajib; root login sudah mati, lihat sshd -T)."
@@ -774,6 +838,7 @@ else
     # -----------------------------------------------------------------------
     langkah "8. Pindah penuh ke port $PORT dan tutup port 22"
     pasang_ssh "Pasang konfigurasi SSH akhir (hanya Port $PORT)" "$KONF" "$PORT"
+    pastikan_allowusers
     if [ $DRY = 0 ] && ! tunggu "Tunggu sshd berhenti listen di port 22" 10 tidak_dengar 22; then
         awas "Port 22 masih listen. Ada 'Port 22' lain di konfigurasi (aturan UFW 22 tetap dihapus):"
         grep -rnE '^\s*Port\s' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/ | sed 's/^/      │ /' || true
@@ -925,4 +990,10 @@ info "    Host vps"
 info "        HostName $IP"
 info "        Port $PORT"
 info "        User $USERNAME"
-info "Hapus sesi root lama di klien SSH-mu supaya percobaan login root tidak membuat IP-mu ke-ban."
+# Sesi tersimpan dengan user yang kini ditolak (root, user bawaan cloud) yang
+# menyambung ulang otomatis cepat mencapai maxretry fail2ban: IP-mu ke-ban, dan
+# recidive memblokir semua port, termasuk login $USERNAME.
+DITOLAK=root${LAIN// /, }
+info "Hapus atau ubah sesi tersimpan di klien SSH/SFTP-mu (MobaXterm, Dolphin, VS Code, rsync)"
+info "yang masih memakai user $DITOLAK: tiap percobaannya dihitung login gagal oleh"
+info "fail2ban dan bisa membuat IP-mu ke-ban."

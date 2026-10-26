@@ -42,6 +42,13 @@ if [ $ROOT = 1 ]; then
         v=$(awk -v k="$k" '$1==k{print $2; exit}' <<<"$efektif")
         [ "$v" = "${mau[$k]}" ] && ok "$k $v" || awas "$k $v (harusnya ${mau[$k]})"
     done
+    # AllowUsers/AllowGroups dari semua file digabung; sshd -T menulis satu
+    # baris per entri. Salah satunya cukup untuk membatasi siapa yang boleh login.
+    allow=$(sed -n 's/^allowusers //p' <<<"$efektif" | sort -u | paste -sd' ')
+    allowg=$(sed -n 's/^allowgroups //p' <<<"$efektif" | sort -u | paste -sd' ')
+    if [ -n "$allow" ]; then ok "allowusers $allow (hanya user ini yang boleh login SSH)"
+    elif [ -n "$allowg" ]; then ok "allowgroups $allowg (hanya anggota grup ini yang boleh login SSH)"
+    else awas "allowusers tidak diatur: semua user yang punya key bisa login SSH"; fi
 else
     info "[root] sshd -T dilewati"
 fi
@@ -70,6 +77,9 @@ if [ $ROOT = 1 ]; then
     else
         awas "Ada sudo tanpa password (NOPASSWD) selain root:"
         sed 's/^/          /' <<<"$np"
+        info "Perbaiki: hapus baris itu dengan  sudo visudo -f FILE  (FILE = nama sebelum ':')."
+        info "User bawaan cloud (ubuntu/debian/admin) yang tidak kamu pakai: setelah login user-mu"
+        info "+ sudo terbukti, hapus juga usernya:  sudo deluser --remove-home NAMA"
     fi
 fi
 
@@ -93,6 +103,11 @@ for h in /home/*; do
     u=$(basename "$h"); f="$h/.ssh/authorized_keys"
     $S test -e "$f" || continue
     $S ssh-keygen -lf "$f" 2>/dev/null | sed "s|^|        $u: |"
+    # Nama persis atau USER@host. Pola wildcard (ops*) tidak dinilai.
+    if [ -n "${allow:-}" ] && [[ $allow != *[*?]* ]] \
+       && ! awk -v u="$u" '{for (i = 1; i <= NF; i++) if ($i == u || index($i, u "@") == 1) f = 1} END {exit !f}' <<<"$allow"; then
+        info "$u: tidak ada di AllowUsers, jadi key di atas tidak bisa dipakai login SSH"
+    fi
     cek_izin "$h" "$u" home
     cek_izin "$h/.ssh" "$u" ssh
     cek_izin "$f" "$u" ak
