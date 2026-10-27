@@ -12,18 +12,27 @@ dijalankan sekali sebagai root sebelum VPS dipakai untuk proyek apa pun.
 | Brute-force | fail2ban: jail `sshd`, `sshd-lambat` (serangan pelan), `recidive` (pelaku berulang, semua port), ban bertingkat |
 | Lainnya | swap, update keamanan otomatis, key root dinonaktifkan |
 
-**Teruji** (VPS Hetzner, dari awal sampai selesai, lalu reboot dan
+**Teruji** (VPS Hetzner dan BeroHost, dari awal sampai selesai,
 `cek-keamanan.sh` 0 AWAS):
 
 | OS | OpenSSH | Catatan |
 |---|---|---|
 | Ubuntu 24.04 | 9.6 | socket activation (`ssh.socket`), sudo klasik |
 | Ubuntu 26.04 | 10.2 | socket activation, `sudo` = sudo-rs |
-| Debian 13 | 10.0 | `ssh.service` biasa, UFW & fail2ban dipasang dari nol |
-| Debian 13 (BeroHost) | 10.0 | image menyalakan LLMNR/mDNS di `systemd-resolved` (port 5355): dimatikan otomatis di langkah 5 (teruji) |
+| Debian 13 | 10.0 | `ssh.service` biasa, UFW & fail2ban dipasang dari nol; image BeroHost menyalakan LLMNR/mDNS (port 5355), dimatikan otomatis di langkah 5 |
 
-Juga teruji: uji login port baru yang gagal (port 22 tetap bisa dipakai, tidak
-terkunci), menjalankan ulang dari kondisi setengah jadi, dan ban dari IP asing.
+Versi terbaru (`AllowUsers`, `yes` jadi `no` di file SSH provider, override
+cloud-init) teruji di BeroHost untuk ketiga OS di atas, Debian 13 juga
+setelah reboot. Image BeroHost membawa `PermitRootLogin yes` dan
+`PasswordAuthentication yes` dari provider; keduanya diubah jadi `no`. Di
+Ubuntu 24.04 juga teruji: run ulang di atas setup versi lama (wajib lewat
+transisi + uji login lagi) dan run ulang dengan user tambahan di `AllowUsers`
+(dipertahankan).
+
+Juga teruji (Hetzner, versi sebelumnya): uji login port baru yang gagal
+(port 22 tetap bisa dipakai, tidak terkunci), menjalankan ulang dari kondisi
+setengah jadi, reboot pasca-setup di ketiga OS, dan ban dari IP asing. Image
+dengan user bawaan cloud (`ubuntu`/`admin`, mis. AWS/Oracle) belum diuji.
 
 ```
 setup-awal-vps/
