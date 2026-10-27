@@ -166,7 +166,17 @@ fi
 
 judul "Port yang terbuka ke luar"
 publik=$(ss -tulnH | awk '{print $5}' | grep -vE '^(127\.|\[::1\]|::1)' | grep -vE '%lo:' | sort -u)
+# Socket UDP QUIC milik cloudflared.service (Cloudflare Tunnel): klien yang
+# terhubung KELUAR ke Cloudflare dengan port acak, bukan layanan; koneksi masuk
+# tetap ditolak UFW. Hanya PID utama service itu yang dikenali: cloudflared lain
+# (tunnel liar, sering dipakai sebagai backdoor) tetap AWAS.
+cfd=""; n_cfd=0
+cf_pid=$(systemctl show -p MainPID --value cloudflared 2>/dev/null)
+if [ $ROOT = 1 ] && [ -n "$cf_pid" ] && [ "$cf_pid" != 0 ]; then
+    cfd=$($S ss -ulnpH 2>/dev/null | awk -v pid="pid=$cf_pid," 'index($0, pid) {print $4}' | sort -u)
+fi
 for p in $publik; do
+    if [ -n "$cfd" ] && grep -qxF -- "$p" <<<"$cfd"; then n_cfd=$((n_cfd + 1)); continue; fi
     # 68 (DHCPv4) / 546 (DHCPv6): klien DHCP systemd-networkd di VPS ber-IP dinamis,
     # bukan layanan; koneksi masuk tetap diblokir UFW.
     case "$p" in
@@ -176,6 +186,7 @@ for p in $publik; do
         *)             awas "$p terbuka ke luar - pastikan memang perlu";;
     esac
 done
+[ $n_cfd = 0 ] || ok "$n_cfd socket UDP cloudflared.service (Cloudflare Tunnel, koneksi keluar; bukan layanan)"
 
 judul "fail2ban [root]"
 if [ $ROOT = 1 ]; then
@@ -221,7 +232,15 @@ if [ $ROOT = 1 ]; then
     f2blog=$($S sh -c 'zcat -f /var/log/fail2ban.log*' 2>/dev/null)
     awal=$(grep -oE '^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:]{8}' <<<"$f2blog" | sort | head -1)
     ft=$($S fail2ban-client get sshd findtime 2>/dev/null | tail -1 | tr -dc '0-9')
-    [ -z "$awal" ] || awal=$(date -d "$awal ${ft:-0} seconds ago" '+%F %T')
+    # fail2ban.log memakai jam lokal saat baris ditulis: setelah zona waktu
+    # diganti (mis. UTC -> WIB), baris lama masih jam UTC. Untuk awal jangkauan
+    # dipakai tafsiran yang paling lambat, supaya jangkauan tidak melebar ke
+    # sebelum fail2ban terpasang.
+    if [ -n "$awal" ]; then
+        e=$(date -d "$awal" +%s); eu=$(date -d "$awal UTC" +%s)
+        (( eu > e )) && e=$eu
+        awal=$(date -d "@$((e - ${ft:-0}))" '+%F %T')
+    fi
     batas=$(date -d '-7 days' '+%F %T')
     [[ -n $awal && $awal > $batas ]] && batas=$awal
     # "User X from IP not allowed because not listed in AllowUsers": user yang ada
@@ -234,9 +253,15 @@ if [ $ROOT = 1 ]; then
         info "Deteksi jail sshd belum bisa dibuktikan: belum ada login gagal (selain localhost) sejak $batas"
     else
         ip=$(sed -nE 's/.* from ([0-9a-fA-F.:]+) (port|not allowed) .*/\1/p' <<<"$akhir")
-        t=$(date -d "$(awk '{print $1}' <<<"$akhir")" '+%F %T')
-        if grep -F "[sshd] Found $ip - $t" <<<"$f2blog" >/dev/null \
-           || awk -v t="$t" -v s="[sshd] Ignore $ip " 'substr($0, 1, 19) >= t && index($0, s)' <<<"$f2blog" | grep . >/dev/null; then
+        iso=$(awk '{print $1}' <<<"$akhir")
+        t=$(date -d "$iso" '+%F %T'); tu=$(TZ=UTC date -d "$iso" '+%F %T')
+        # Cocokkan dengan jam lokal sekarang ATAU jam UTC (baris dari sebelum
+        # zona waktu diganti).
+        tercatat() {
+            grep -F "[sshd] Found $ip - $1" <<<"$f2blog" >/dev/null \
+            || awk -v t="$1" -v s="[sshd] Ignore $ip " 'substr($0, 1, 19) >= t && index($0, s)' <<<"$f2blog" | grep . >/dev/null
+        }
+        if tercatat "$t" || tercatat "$tu"; then
             ok "Deteksi jail sshd bekerja: login gagal terakhir ($ip, $t) tercatat fail2ban"
         else
             awas "Login gagal terakhir ($ip, $t) TIDAK tercatat jail sshd - deteksi rusak?"
