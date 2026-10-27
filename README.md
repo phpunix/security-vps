@@ -98,11 +98,12 @@ Ganti `AKUN` dengan akun GitHub-mu.
 
 ## 3. Alur script
 
-Script menanyakan nama user, port SSH, ukuran swap, dan whitelist IP, lalu:
+Script menanyakan nama user, port SSH, ukuran swap, whitelist IP, dan zona
+waktu (default `Asia/Jakarta`; `-` = tidak diubah), lalu:
 
 | Langkah | Isi |
 |---|---|
-| 1 | Matikan login password SSH dulu (masih port 22, root tetap bisa dengan key), tunggu apt bebas, update sistem. Kalau butuh reboot: reboot, login root, jalankan ulang |
+| 1 | Matikan login password SSH dulu (masih port 22, root tetap bisa dengan key), pasang zona waktu (sebelum layanan lain menulis log, supaya log memakai satu zona), tunggu apt bebas, update sistem. Kalau butuh reboot: reboot, login root, jalankan ulang |
 | 2 | Buat user + password (untuk sudo), salin key root (tanpa opsi `command=` cloud-init; kalau key lebih dari satu, kamu memilih), tegakkan izin `~/.ssh` |
 | 3 | **Uji login user di port 22** dari terminal baru di PC |
 | 4 | Swap |

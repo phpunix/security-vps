@@ -25,7 +25,7 @@ if sudo -n true 2>/dev/null; then ROOT=1; S="sudo -n"; else ROOT=0; S=""; fi
 [ $ROOT = 1 ] || echo "(sudo -n tidak tersedia: bagian bertanda [root] dilewati. Jalankan sudo -v dulu.)"
 
 judul "Sistem"
-. /etc/os-release; info "$PRETTY_NAME, kernel $(uname -r), uptime $(uptime -p)"
+. /etc/os-release; info "$PRETTY_NAME, kernel $(uname -r), uptime $(uptime -p), zona waktu $(timedatectl show -p Timezone --value 2>/dev/null || echo '?')"
 PERLU_REBOOT=0
 if [ -f /var/run/reboot-required ]; then awas "Perlu reboot (update kernel/library)"; PERLU_REBOOT=1
 else ok "Tidak perlu reboot"; fi

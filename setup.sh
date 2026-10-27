@@ -485,9 +485,19 @@ if [ -n "$WL" ]; then
     fi
 fi
 
+# Zona waktu: jam di log (journal, fail2ban, nginx) dan jadwal cron/timer.
+# "-" = biarkan seperti sekarang.
+ZONA_LAMA=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+tanya ZONA "Zona waktu (- = tetap ${ZONA_LAMA:-seperti sekarang})" Asia/Jakarta
+[ "$ZONA" = - ] && ZONA=$ZONA_LAMA
+if [ -n "$ZONA" ]; then
+    [[ $ZONA =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] && [ -f "/usr/share/zoneinfo/$ZONA" ] \
+        || gagal "Zona waktu tidak dikenal: $ZONA (contoh: Asia/Jakarta, Asia/Makassar, Asia/Jayapura, UTC)"
+fi
+
 echo
 SWAP_KET=$SWAP; [ $SWAP_ADA = 0 ] || SWAP_KET="sudah ada"
-info "Ringkasan: user $USERNAME, SSH port $PORT, swap $SWAP_KET, IP $IP, whitelist ${WL:-tidak ada}"
+info "Ringkasan: user $USERNAME, SSH port $PORT, swap $SWAP_KET, IP $IP, whitelist ${WL:-tidak ada}, zona waktu ${ZONA:-tidak diubah}"
 info "Sebelum lanjut, pastikan:"
 info " - $SESI_INI TETAP TERBUKA sampai script selesai"
 info " - firewall/security group di panel provider (kalau ada) mengizinkan TCP $PORT"
@@ -605,7 +615,7 @@ cara_login() {
 }
 
 # ---------------------------------------------------------------------------
-langkah "1. Tutup login password SSH, lalu update sistem"
+langkah "1. Tutup login password SSH, zona waktu, lalu update sistem"
 # Upgrade bisa makan beberapa menit; selama itu default provider (root + password)
 # masih terbuka untuk bot. Tutup dulu, tetap di port 22: root tetap bisa login
 # dengan key, jadi aman asalkan sesi ini memang masuk dengan key.
@@ -624,6 +634,15 @@ else
     esac
     pasang_ssh "Pasang $SSHD_CONF awal (port 22, tanpa password, root hanya dengan key)" "$KONF_AWAL" 22
     pastikan_ssh "passwordauthentication no" "kbdinteractiveauthentication no" "permitrootlogin without-password|prohibit-password"
+fi
+
+# Zona waktu sebelum update dan sebelum fail2ban (langkah 9) menulis log, supaya
+# log baru memakai satu zona. Baris log lama tetap di zona sebelumnya
+# (cek-keamanan.sh menanganinya).
+if [ -n "$ZONA" ] && [ "$ZONA" != "$ZONA_LAMA" ]; then
+    run "Zona waktu $ZONA" timedatectl set-timezone "$ZONA"
+elif [ -n "$ZONA" ]; then
+    ok "Zona waktu sudah $ZONA"
 fi
 
 tunggu "Tunggu apt/dpkg tidak sedang dipakai (unattended-upgrades/cloud-init)" 600 apt_bebas \
