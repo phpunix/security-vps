@@ -98,7 +98,7 @@ Script menanyakan nama user, port SSH, ukuran swap, dan whitelist IP, lalu:
 | 3 | **Uji login user di port 22** dari terminal baru di PC |
 | 4 | Swap |
 | 5 | UFW: port 22 (sementara) + port baru, rate-limit, whitelist opsional |
-| 6 | Hardening SSH: listen di port 22 **dan** port baru (dua tahap); hanya user baru yang boleh login SSH (`AllowUsers`); `yes` untuk login password di file SSH lain (mis. `50-cloud-init.conf`) jadi `no`, cloud-init dicegah menyalakannya lagi |
+| 6 | Hardening SSH: listen di port 22 **dan** port baru (dua tahap); hanya user baru yang boleh login SSH (`AllowUsers`); `yes` untuk login password/root di file SSH lain (mis. `50-cloud-init.conf`, `PermitRootLogin yes` dari provider) jadi `no`, cloud-init dicegah menyalakan login password lagi |
 | 7 | **Uji login user di port baru** dari terminal baru di PC |
 | 8 | Konfigurasi akhir (hanya port baru), tutup port 22 |
 | 9 | fail2ban + uji ban dan uji deteksi login gagal |
@@ -146,12 +146,13 @@ Pengaman lain:
   - Hapus sesi tersimpan di klien (MobaXterm, Dolphin, VS Code, rsync) yang
     masih memakai root atau user bawaan: tiap percobaannya dihitung login
     gagal dan bisa membuat IP-mu ke-ban.
-- **Login password di file provider:** `PasswordAuthentication yes` di
-  `50-cloud-init.conf` atau `sshd_config` sebenarnya sudah kalah oleh
-  `00-hardening.conf`, tapi aktif lagi kalau file itu hilang, dan di dalam
-  blok `Match` tetap berlaku (tidak terlihat di `sshd -T`). Script mengubahnya
-  jadi `no` dan memasang `ssh_pwauth: false` untuk cloud-init, supaya tidak
-  ditulis ulang saat cloud-init menganggap VPS sebagai instance baru.
+- **Login password/root di file provider:** `PasswordAuthentication yes` di
+  `50-cloud-init.conf`, atau `PermitRootLogin yes` yang ditambahkan provider
+  di `sshd_config`, sebenarnya sudah kalah oleh `00-hardening.conf`, tapi
+  aktif lagi kalau file itu hilang, dan di dalam blok `Match` tetap berlaku
+  (tidak terlihat di `sshd -T`). Script mengubahnya jadi `no` dan memasang
+  `ssh_pwauth: false` untuk cloud-init, supaya tidak ditulis ulang saat
+  cloud-init menganggap VPS sebagai instance baru.
 - **Whitelist IP (opsional):** IP yang sedang kamu pakai bisa dibebaskan dari
   rate-limit UFW dan ban fail2ban, berguna untuk SFTP dari file manager
   (Dolphin dsb.) yang membuka banyak koneksi sekaligus. IP VPN biasanya dipakai

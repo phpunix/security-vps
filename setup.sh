@@ -314,7 +314,7 @@ berhenti() {
     if [ $rc != 0 ]; then
         printf '    Log lengkap : %s\n' "$LOG"
         [ -z "$LOG_USER" ] || printf '    Salinan log : %s (bisa dibaca %s tanpa sudo)\n' "$LOG_USER" "$USERNAME"
-        printf '    Sesi root ini JANGAN ditutup; perbaiki penyebabnya lalu jalankan ulang script.\n'
+        printf '    Jangan tutup %s; perbaiki penyebabnya lalu jalankan ulang script.\n' "${SESI_INI:-sesi root ini}"
     elif [ -n "$LOG_USER" ]; then
         printf '    Salinan log : %s (bisa dibaca %s tanpa sudo: cat ~/setup-vps-log/%s)\n' \
             "$LOG_USER" "$USERNAME" "${LOG##*/}"
@@ -384,6 +384,8 @@ else
 fi
 
 deteksi_sesi
+# Run ulang setelah setup berjalan lewat sudo dari sesi user (login SSH root sudah mati).
+SESI_INI="sesi $SESI_USER ini"
 if [ -n "$KLIEN" ]; then
     info "Sesi ini: $SESI_USER dari $KLIEN ke $IP${SESI_SUMBER:+ ($SESI_SUMBER)}"
 else
@@ -460,8 +462,9 @@ else
     [ -z "$lain" ] || gagal "Port $PORT sudah dipakai program lain: $lain"
 fi
 
+SWAP_ADA=0
 if swapon --show --noheadings | grep . >/dev/null; then
-    SWAP=0; info "Swap sudah ada, langkah swap dilewati"
+    SWAP=0; SWAP_ADA=1; info "Swap sudah ada, langkah swap dilewati"
 else
     tanya SWAP "Ukuran swap, misalnya 2G/4G (0 = tanpa swap)" 4G
     [[ $SWAP =~ ^(0|[1-9][0-9]*[MG])$ ]] || gagal "Ukuran swap tidak valid: $SWAP"
@@ -483,9 +486,10 @@ if [ -n "$WL" ]; then
 fi
 
 echo
-info "Ringkasan: user $USERNAME, SSH port $PORT, swap $SWAP, IP $IP, whitelist ${WL:-tidak ada}"
+SWAP_KET=$SWAP; [ $SWAP_ADA = 0 ] || SWAP_KET="sudah ada"
+info "Ringkasan: user $USERNAME, SSH port $PORT, swap $SWAP_KET, IP $IP, whitelist ${WL:-tidak ada}"
 info "Sebelum lanjut, pastikan:"
-info " - sesi root ini TETAP TERBUKA sampai script selesai"
+info " - $SESI_INI TETAP TERBUKA sampai script selesai"
 info " - firewall/security group di panel provider (kalau ada) mengizinkan TCP $PORT"
 info " - kamu tahu cara membuka web console (VNC/serial) provider untuk keadaan darurat"
 yakin "Lanjut?" y || exit 0
@@ -695,7 +699,7 @@ run "Home $H tidak bisa ditulis group/orang lain" chmod go-w "$H"
 langkah "3. Uji login $USERNAME (masih port 22)"
 if dengar 22; then
     SEJAK=$(date '+%F %T')
-    info "Di PC, buka TERMINAL/SESI BARU (sesi root ini tetap terbuka) sebagai $USERNAME, BUKAN root:"
+    info "Di PC, buka TERMINAL/SESI BARU ($SESI_INI tetap terbuka) sebagai $USERNAME, BUKAN root:"
     info "    ssh $USERNAME@$IP"
     info "    sudo true && echo SUDO OK"
     info "Biarkan sesi uji itu terbuka sampai kamu menjawab: script memeriksa login & sudo-nya di log sistem."
@@ -772,14 +776,16 @@ else
     info "Port $PORT di luar rentang port acak $LO-$HI: tidak perlu dipesan"
 fi
 
-# Login berbasis password yang masih "yes" di file lain: 50-cloud-init.conf
+# Login password atau root yang masih "yes" di file lain: 50-cloud-init.conf
 # (cloud-init, kalau provider menyetel ssh_pwauth: true) atau tambahan provider
-# di sshd_config. Sekarang kalah oleh $SSHD_CONF yang dibaca lebih dulu, tapi
-# aktif lagi kalau file itu hilang, dan di dalam blok Match nilainya menimpa
-# pengaturan global. Hanya yes -> no, jadi tidak bisa mengunci.
+# di sshd_config (mis. "PermitRootLogin yes"). Sekarang kalah oleh $SSHD_CONF
+# yang dibaca lebih dulu, tapi aktif lagi kalau file itu hilang, dan di dalam
+# blok Match nilainya menimpa pengaturan global. Hanya yes -> no, jadi tidak
+# bisa mengunci: login root sudah mati sejak langkah ini, dan rollback
+# (KONF_AWAL, root dengan key) tetap menang karena $SSHD_CONF dibaca lebih dulu.
 # Semua bentuk yang diterima sshd: "=" atau spasi, huruf besar/kecil, "yes"
 # berkutip, komentar di ujung baris. Grup 1 = kunci + pemisah, 4 = sisa baris.
-PW_KUNCI='^([[:space:]]*(PasswordAuthentication|KbdInteractiveAuthentication|ChallengeResponseAuthentication)([[:space:]]*=[[:space:]]*|[[:space:]]+))'
+PW_KUNCI='^([[:space:]]*(PasswordAuthentication|KbdInteractiveAuthentication|ChallengeResponseAuthentication|PermitRootLogin|PermitEmptyPasswords)([[:space:]]*=[[:space:]]*|[[:space:]]+))'
 PW_SISA='(([[:space:]]+#.*)?[[:space:]]*)$'
 PW_YA="${PW_KUNCI}\"?yes\"?${PW_SISA}"
 PW_UBAH=0
@@ -787,7 +793,8 @@ for f in /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf; do
     [ -f "$f" ] && [ "$f" != "$SSHD_CONF" ] || continue
     if grep -qiE "$PW_YA" "$f" 2>/dev/null; then
         grep -niE "$PW_YA" "$f" | while IFS= read -r l; do info "$f:$l"; done
-        run "Ubah login password 'yes' jadi 'no' di $f" sed -i -E "s/$PW_YA/\1no\4/I" "$f"
+        CMD_LABEL="sed -i 's/yes/no/' $f" run "Ubah 'yes' jadi 'no' (login password/root) di $f" \
+            sed -i -E "s/$PW_YA/\1no\4/I" "$f"
         PW_UBAH=1
     fi
 done
@@ -836,7 +843,7 @@ pastikan_ssh "permitrootlogin no" "passwordauthentication no" "kbdinteractiveaut
 pastikan_allowusers
 # pasang_ssh tidak me-restart kalau konfigurasinya sudah sesuai: muat ulang
 # supaya perubahan "yes" -> "no" di blok Match ikut berlaku. sshd -t sudah lolos.
-[ $PW_UBAH = 0 ] || run "Muat ulang sshd (perubahan login password di file lain)" systemctl try-reload-or-restart ssh
+[ $PW_UBAH = 0 ] || run "Muat ulang sshd (perubahan 'yes' jadi 'no' di file lain)" systemctl try-reload-or-restart ssh
 tampil_ssh
 
 # ---------------------------------------------------------------------------
@@ -845,7 +852,7 @@ if [ $DRY = 0 ] && ! aturan22 && ! dengar 22; then
     ok "Port 22 sudah ditutup di run sebelumnya; uji login dilewati"
 else
     SEJAK=$(date '+%F %T')
-    info "Di PC, buka SESI BARU lagi (sesi root ini tetap terbuka):"
+    info "Di PC, buka SESI BARU lagi ($SESI_INI tetap terbuka):"
     info "    ssh -p $PORT $USERNAME@$IP     # harus BERHASIL, lalu: sudo true && echo SUDO OK"
     info "    ssh -p $PORT root@$IP          # harus DITOLAK (Permission denied) - cukup SEKALI:"
     info "      tiap percobaan root dihitung kegagalan oleh fail2ban (5 = IP-mu ke-ban 1 jam)."
@@ -860,7 +867,7 @@ else
             gagal "Uji login port $PORT belum berhasil. Perbaiki penyebabnya (mis. firewall panel untuk TCP $PORT), lalu jalankan ulang script."
         fi
         awas "PERHATIAN: port 22 TIDAK bisa dipakai (sshd tidak listen di 22 atau aturan UFW 22 hilang)."
-        awas "JANGAN tutup sesi root ini."
+        awas "JANGAN tutup $SESI_INI."
         # Bukan kembali ke default provider (bisa root + password aktif lagi):
         # tetap tanpa password, port 22, root boleh login lagi dengan key.
         if yakin "Kembalikan SSH ke port 22 (tetap tanpa password; root bisa login lagi dengan key)?" y; then
@@ -1031,7 +1038,7 @@ fi
 echo
 ok "Selesai. Mulai sekarang login: ssh -p $PORT $USERNAME@$IP"
 info "Log lengkap: $LOG"
-info "Sesi root ini boleh ditutup. Contoh ~/.ssh/config di PC:"
+info "${SESI_INI^} boleh ditutup. Contoh ~/.ssh/config di PC:"
 info "    Host vps"
 info "        HostName $IP"
 info "        Port $PORT"

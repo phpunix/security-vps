@@ -19,8 +19,9 @@ sebagai root) dan audit `cek-keamanan.sh` (hanya membaca). Lihat `README.md`.
     file digabung, `sshd -T | grep ^allowusers` harus persis isi baris
     `AllowUsers` di `00-hardening.conf` (user tambahan pemilik dipertahankan),
   - `sshd -T` tidak menampilkan blok `Match`: semua `yes` untuk login
-    berbasis password di file SSH lain diubah jadi `no` (hanya ke arah lebih
-    ketat), dan `cek-keamanan.sh` menandai yang tersisa,
+    berbasis password dan `PermitRootLogin`/`PermitEmptyPasswords` di file SSH
+    lain diubah jadi `no` (hanya ke arah lebih ketat), dan `cek-keamanan.sh`
+    menandai yang tersisa,
   - transisi + uji login hanya boleh dilompati kalau `00-hardening.conf` **sama
     persis** dengan konfigurasi akhir; jangan dilonggarkan (langkah 3/7
     dilewati saat port 22 tutup, langkah 10 hanya bertanya),
