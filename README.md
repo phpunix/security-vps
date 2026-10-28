@@ -27,7 +27,7 @@ setelah reboot. Image BeroHost membawa `PermitRootLogin yes` dan
 `PasswordAuthentication yes` dari provider; keduanya diubah jadi `no`. Di
 Ubuntu 24.04 juga teruji: run ulang di atas setup versi lama (wajib lewat
 transisi + uji login lagi) dan run ulang dengan user tambahan di `AllowUsers`
-(dipertahankan).
+(dipertahankan). Zona waktu (langkah 1) teruji di Debian 13.
 
 Juga teruji (Hetzner, versi sebelumnya): uji login port baru yang gagal
 (port 22 tetap bisa dipakai, tidak terkunci), menjalankan ulang dari kondisi

@@ -235,10 +235,12 @@ if [ $ROOT = 1 ]; then
     # fail2ban.log memakai jam lokal saat baris ditulis: setelah zona waktu
     # diganti (mis. UTC -> WIB), baris lama masih jam UTC. Untuk awal jangkauan
     # dipakai tafsiran yang paling lambat, supaya jangkauan tidak melebar ke
-    # sebelum fail2ban terpasang.
+    # sebelum fail2ban terpasang, kecuali yang jatuh di masa depan: baris jam
+    # WIB yang dibaca sebagai UTC jadi 7 jam ke depan (VPS baru yang zona
+    # waktunya diganti sebelum fail2ban dipasang).
     if [ -n "$awal" ]; then
         e=$(date -d "$awal" +%s); eu=$(date -d "$awal UTC" +%s)
-        (( eu > e )) && e=$eu
+        (( eu > e && eu <= $(date +%s) )) && e=$eu
         awal=$(date -d "@$((e - ${ft:-0}))" '+%F %T')
     fi
     batas=$(date -d '-7 days' '+%F %T')
