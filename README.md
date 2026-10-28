@@ -10,7 +10,7 @@ dijalankan sekali sebagai root sebelum VPS dipakai untuk proyek apa pun.
 | SSH | port pilihanmu (default **2222**), root login mati, password login mati, sesi "hantu" diputus ~3 menit |
 | Firewall | UFW: tolak semua koneksi masuk kecuali port SSH (rate-limit) |
 | Brute-force | fail2ban: jail `sshd`, `sshd-lambat` (serangan pelan), `recidive` (pelaku berulang, semua port), ban bertingkat |
-| Lainnya | swap, update keamanan otomatis, key root dinonaktifkan |
+| Lainnya | swap, update keamanan otomatis (layanan yang masih memakai library lama di-restart otomatis oleh `needrestart`), key root dinonaktifkan |
 
 **Teruji** (VPS Hetzner dan BeroHost, dari awal sampai selesai,
 `cek-keamanan.sh` 0 AWAS):
@@ -103,7 +103,7 @@ waktu (default `Asia/Jakarta`; `-` = tidak diubah), lalu:
 
 | Langkah | Isi |
 |---|---|
-| 1 | Matikan login password SSH dulu (masih port 22, root tetap bisa dengan key), pasang zona waktu (sebelum layanan lain menulis log, supaya log memakai satu zona), tunggu apt bebas, update sistem. Kalau butuh reboot: reboot, login root, jalankan ulang |
+| 1 | Matikan login password SSH dulu (masih port 22, root tetap bisa dengan key), pasang zona waktu (sebelum layanan lain menulis log, supaya log memakai satu zona), tunggu apt bebas, update sistem, pasang `needrestart` dan (kalau perintah `last` belum ada, mis. Debian 13) `wtmpdb`. Kalau butuh reboot: reboot, login root, jalankan ulang |
 | 2 | Buat user + password (untuk sudo), salin key root (tanpa opsi `command=` cloud-init; kalau key lebih dari satu, kamu memilih), tegakkan izin `~/.ssh` |
 | 3 | **Uji login user di port 22** dari terminal baru di PC |
 | 4 | Swap |
@@ -113,7 +113,7 @@ waktu (default `Asia/Jakarta`; `-` = tidak diubah), lalu:
 | 8 | Konfigurasi akhir (hanya port baru), tutup port 22 |
 | 9 | fail2ban + uji ban dan uji deteksi login gagal |
 | 10 | **Konfirmasi**, lalu nonaktifkan key root |
-| 11 | Update keamanan otomatis |
+| 11 | Update keamanan otomatis; `needrestart` me-restart otomatis layanan yang masih memakai library lama (di Debian diatur script; reboot untuk kernel tetap manual) |
 | 12 | Verifikasi akhir dengan `cek-keamanan.sh` |
 
 **Di langkah 3 dan 7** script berhenti dan meminta kamu menguji dari PC:

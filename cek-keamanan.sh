@@ -313,6 +313,18 @@ tunda=$(sed -n '/deferred due to phasing:/,/^[^ ]/{/^ /p}' <<<"$sim" | wc -w)
 [ "$n" = 0 ] && ok "Tidak ada paket menunggu update" || awas "$n paket bisa di-update (sudo apt upgrade)"
 [ "$tunda" = 0 ] || info "$tunda paket ditunda bertahap oleh Ubuntu (phased update) - normal, akan terpasang otomatis"
 systemctl is-active -q unattended-upgrades && ok "unattended-upgrades aktif (update keamanan otomatis)" || awas "unattended-upgrades tidak aktif"
+# needrestart: setelah update, layanan yang masih memakai library lama (mis.
+# libssl) di-restart otomatis. Ubuntu: hook apt "-m u"; Debian: $nrconf{restart}
+# = 'a' (tanpa itu, update otomatis hanya mendaftar). Nilai terakhir yang berlaku.
+nr=$(grep -hsE '^[[:space:]]*\$nrconf\{restart\}' /etc/needrestart/needrestart.conf /etc/needrestart/conf.d/*.conf | tail -1)
+re_a="=[[:space:]]*['\"]a['\"]"
+if [ ! -x /usr/sbin/needrestart ]; then
+    awas "needrestart tidak terpasang: setelah update, layanan tetap memakai library lama sampai restart/reboot (jalankan ulang setup.sh)"
+elif [[ $nr =~ $re_a ]] || { [ -z "$nr" ] && grep -qs -- '-m u' /etc/apt/apt.conf.d/99needrestart; }; then
+    ok "needrestart me-restart otomatis layanan yang masih memakai library lama"
+else
+    awas "needrestart hanya mendaftar layanan yang perlu restart, tidak me-restart (jalankan ulang setup.sh)"
+fi
 
 judul "Port yang dipesan (ip_local_reserved_ports)"
 info "$(cat /proc/sys/net/ipv4/ip_local_reserved_ports 2>/dev/null || echo -)"

@@ -649,7 +649,16 @@ tunggu "Tunggu apt/dpkg tidak sedang dipakai (unattended-upgrades/cloud-init)" 6
     || gagal "apt/dpkg masih dipakai proses lain setelah 10 menit; cek: ps aux | grep -E 'apt|dpkg'"
 CMD_LABEL="apt-get update" run "Update daftar paket" "${APT[@]}" update
 CMD_LABEL="apt-get full-upgrade" run "Upgrade semua paket (bisa beberapa menit)" "${APT[@]}" full-upgrade
-CMD_LABEL="apt-get install sudo ufw unattended-upgrades" run "Install sudo, ufw, unattended-upgrades" "${APT[@]}" install sudo ufw unattended-upgrades
+# needrestart: restart layanan yang masih memakai library lama setelah update
+# (diatur di langkah 11). Debian 13 dan Ubuntu 26.04 tidak lagi memasang "last"
+# lewat util-linux: penggantinya wtmpdb, login-nya dicatat libpam-wtmpdb.
+PAKET=(sudo ufw unattended-upgrades needrestart)
+if ! command -v last >/dev/null; then
+    for p in wtmpdb libpam-wtmpdb; do
+        if apt-cache show "$p" >/dev/null 2>&1; then PAKET+=("$p"); fi
+    done
+fi
+CMD_LABEL="apt-get install ${PAKET[*]}" run "Install ${PAKET[*]}" "${APT[@]}" install "${PAKET[@]}"
 if [ -f /var/run/reboot-required ]; then
     awas "Update butuh reboot."
     if yakin "Reboot sekarang? Setelah login root lagi, jalankan ulang script ini" y; then
@@ -1027,6 +1036,28 @@ else
     ok "20auto-upgrades sudah aktif"
 fi
 run "Aktifkan unattended-upgrades" systemctl enable --now unattended-upgrades
+# needrestart: setelah update otomatis (mis. libssl), layanan yang masih memakai
+# library lama di-restart. Ubuntu sudah begitu (hook apt "-m u"); Debian tanpa
+# terminal hanya mendaftar. Docker dkk. tetap dikecualikan needrestart.conf.
+# Reboot untuk kernel tetap manual (cek-keamanan.sh: "Perlu reboot").
+NR_CONF=/etc/needrestart/conf.d/90-restart-otomatis.conf
+if grep -qs -- '-m u' /etc/apt/apt.conf.d/99needrestart; then
+    ok "needrestart me-restart layanan otomatis setelah update (mode Ubuntu)"
+else
+    ISI_NR=$(cat <<'EOF'
+# Dari setup-awal-vps: setelah update, restart otomatis layanan yang masih
+# memakai library lama (bawaan Debian tanpa terminal: hanya mendaftar).
+$nrconf{restart} = 'a';
+# Info kernel baru cukup teks, tanpa dialog; reboot tetap manual.
+$nrconf{kernelhints} = -1;
+EOF
+)
+    if [ "$(cat "$NR_CONF" 2>/dev/null)" = "$ISI_NR" ]; then
+        ok "needrestart me-restart layanan otomatis setelah update ($NR_CONF)"
+    else
+        tulis "needrestart: restart layanan otomatis setelah update" "$NR_CONF" 644 <<<"$ISI_NR"
+    fi
+fi
 
 # ---------------------------------------------------------------------------
 langkah "12. Verifikasi akhir"
