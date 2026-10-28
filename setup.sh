@@ -868,6 +868,32 @@ fi
 run "Aktifkan UFW" ufw --force enable
 run "Status UFW" ufw status verbose
 
+# Debian tidak menyalakan dua pengaman kernel yang sudah bawaan Ubuntu
+# (10-ptrace.conf, 10-kernel-hardening.conf): ptrace hanya ke proses turunan
+# sendiri, dan alamat memori kernel disembunyikan dari user biasa. File hanya
+# ditulis kalau kedua pengaturan ada dan bisa diubah (mis. bukan container):
+# "sysctl --system" di langkah 6 membaca semua file, dan pengaturan yang gagal
+# disetel membuatnya error.
+if [ "$ID" = debian ]; then
+    F_KERNEL=/etc/sysctl.d/90-kernel-hardening.conf
+    ISI_KERNEL='# Dari security-vps: samakan dengan bawaan Ubuntu.
+kernel.yama.ptrace_scope = 1
+kernel.kptr_restrict = 1'
+    if [ -w /proc/sys/kernel/yama/ptrace_scope ] && [ -w /proc/sys/kernel/kptr_restrict ]; then
+        if [ "$(cat "$F_KERNEL" 2>/dev/null)" != "$ISI_KERNEL" ]; then
+            tulis "Pengaman kernel seperti Ubuntu (ptrace_scope, kptr_restrict)" "$F_KERNEL" 644 <<<"$ISI_KERNEL"
+        fi
+        run "Terapkan $F_KERNEL" sysctl -q -p "$F_KERNEL"
+        if [ $DRY = 0 ]; then
+            [ "$(sysctl -n kernel.yama.ptrace_scope)" = 1 ] && [ "$(sysctl -n kernel.kptr_restrict)" = 1 ] \
+                && ok "ptrace_scope 1, kptr_restrict 1 (sama dengan Ubuntu)" \
+                || awas "ptrace_scope/kptr_restrict belum 1; cek: sysctl kernel.yama.ptrace_scope kernel.kptr_restrict"
+        fi
+    else
+        info "ptrace_scope/kptr_restrict tidak bisa diubah di kernel ini (mis. container); dilewati"
+    fi
+fi
+
 # ---------------------------------------------------------------------------
 langkah "6. Hardening SSH + buka port $PORT (port 22 tetap aktif sementara)"
 # Port di rentang port acak koneksi keluar (biasanya 32768-60999) bisa

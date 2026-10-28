@@ -122,7 +122,7 @@ Lalu:
 | 2 | Buat user + password (untuk sudo), salin key root (tanpa opsi `command=` cloud-init; kalau key lebih dari satu, kamu memilih), tegakkan izin `~/.ssh` |
 | 3 | **Uji login user di port 22** dari terminal baru di PC |
 | 4 | Swap |
-| 5 | UFW: port 22 (sementara) + port baru, rate-limit, whitelist opsional |
+| 5 | UFW: port 22 (sementara) + port baru, rate-limit, whitelist opsional. Debian: `ptrace_scope` dan `kptr_restrict` dinyalakan seperti bawaan Ubuntu |
 | 6 | Hardening SSH: listen di port 22 **dan** port baru (dua tahap); hanya user baru yang boleh login SSH (`AllowUsers`); `yes` untuk login password/root di file SSH lain (mis. `50-cloud-init.conf`, `PermitRootLogin yes` dari provider) jadi `no`, cloud-init dicegah menyalakan login password lagi |
 | 7 | **Uji login user di port baru** dari terminal baru di PC |
 | 8 | Konfigurasi akhir (hanya port baru), tutup port 22 |
