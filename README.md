@@ -74,7 +74,7 @@ sampai script selesai.
 
 ```bash
 command -v git >/dev/null || apt-get -o DPkg::Lock::Timeout=300 install -y git
-git clone https://github.com/AKUN/setup-security-vps.git
+git clone https://github.com/phpunix/setup-security-vps.git
 cd setup-security-vps
 bash setup.sh --dry-run    # lihat alurnya dulu, tidak mengubah apa pun
 bash setup.sh
@@ -83,7 +83,7 @@ bash setup.sh
 **Tanpa git** (unduh arsip):
 
 ```bash
-curl -fsSL https://github.com/AKUN/setup-security-vps/archive/refs/heads/main.tar.gz | tar xz
+curl -fsSL https://github.com/phpunix/setup-security-vps/archive/refs/heads/main.tar.gz | tar xz
 mv setup-security-vps-main setup-security-vps && cd setup-security-vps && bash setup.sh
 ```
 
@@ -95,8 +95,6 @@ mv setup-security-vps-main setup-security-vps && cd setup-security-vps && bash s
 scp -r setup-security-vps root@IP-VPS:/root/      # di PC
 bash /root/setup-security-vps/setup.sh            # di sesi root VPS
 ```
-
-Ganti `AKUN` dengan akun GitHub-mu.
 
 ## 3. Alur script
 

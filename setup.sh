@@ -3,8 +3,8 @@
 # sebagai ROOT. Teruji di Ubuntu 24.04, Ubuntu 26.04, Debian 13. Berhenti
 # meminta konfirmasi di setiap titik yang bisa membuat kamu terkunci (lihat README.md).
 #
-#   git clone https://github.com/AKUN/setup-security-vps.git   # di sesi root VPS baru
-#   bash setup-security-vps/setup.sh                        # sesi root JANGAN ditutup sampai selesai
+#   git clone https://github.com/phpunix/setup-security-vps.git   # di sesi root VPS baru
+#   bash setup-security-vps/setup.sh                              # sesi root JANGAN ditutup sampai selesai
 #
 # Nama user dan port SSH wajib diketik (tanpa default). Default lainnya (cukup
 # Enter): swap 4G, whitelist = IP yang sedang kamu pakai (terdeteksi otomatis
