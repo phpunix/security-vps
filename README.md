@@ -29,7 +29,11 @@ Ubuntu 24.04 juga teruji: run ulang di atas setup versi lama (wajib lewat
 transisi + uji login lagi) dan run ulang dengan user tambahan di `AllowUsers`
 (dipertahankan). Zona waktu (langkah 1) teruji di Debian 13. Versi dengan
 `needrestart`, daftar default, nama user/port wajib diketik, dan zona waktu
-bebas teruji dari awal di Hetzner Debian 13 (0 AWAS).
+bebas teruji dari awal di Hetzner Debian 13 (0 AWAS), dan sebagai run ulang di
+atas setup versi lama di BeroHost Debian 13 (0 AWAS). Pemeriksaan
+`needrestart -b` di `cek-keamanan.sh` teruji di BeroHost Debian 13 dalam kondisi
+bersih; kondisi kernel/layanan yang tertunda baru diuji dengan output
+needrestart tiruan, dan belum diuji di Ubuntu.
 
 Juga teruji (Hetzner, versi sebelumnya): uji login port baru yang gagal
 (port 22 tetap bisa dipakai, tidak terkunci), menjalankan ulang dari kondisi
@@ -207,15 +211,15 @@ Lalu:
       HostName IP-VPS
       User USER
       Port PORT
-      IdentityFile ~/.ssh/ed25519
+      IdentityFile ~/.ssh/id_ed25519
       IdentitiesOnly yes
       AddKeysToAgent yes
   ```
 
   Nama `Host` bebas; login cukup `ssh nama-vps-bebas`. Tanpa config:
-  `ssh -p PORT -i ~/.ssh/ed25519 -o IdentitiesOnly=yes USER@IP-VPS`. Ganti
-  `~/.ssh/ed25519` dengan key privat di PC-mu (default OpenSSH:
-  `~/.ssh/id_ed25519`). `IdentitiesOnly` membuat ssh hanya menawarkan key itu:
+  `ssh -p PORT -i ~/.ssh/id_ed25519 -o IdentitiesOnly=yes USER@IP-VPS`.
+  `~/.ssh/id_ed25519` adalah nama default OpenSSH; ganti kalau key privat di
+  PC-mu bernama lain. `IdentitiesOnly` membuat ssh hanya menawarkan key itu:
   terlalu banyak key di agent berakhir "Too many authentication failures", yang
   dihitung login gagal oleh fail2ban.
 
@@ -240,9 +244,12 @@ yang kamu kenali.
 tersisa di file SSH lain), `AllowUsers` (atau `AllowGroups`), keepalive, izin key,
 sudo tanpa password hanya untuk root, aturan UFW (hanya port SSH), port 22
 tertutup, port yang terbuka ke luar, jail fail2ban aktif dengan port yang benar
-dan **deteksinya terbukti**, riwayat ban bertingkat, update. Kode keluar: `0`
-semua OK, `1` ada AWAS, `2` bagian root dilewati (lupa `sudo -v`), `3`
-satu-satunya AWAS "Perlu reboot".
+dan **deteksinya terbukti**, riwayat ban bertingkat, update, serta kernel dan
+layanan yang masih memakai versi lama (`needrestart -b`, hanya membaca).
+Percobaan login gagal dihitung per koneksi, tanpa uji dari localhost. Kode
+keluar: `0` semua OK, `1` ada AWAS, `2` bagian root dilewati (lupa `sudo -v`),
+`3` AWAS hanya soal reboot (kernel baru, atau layanan yang masih memakai
+library lama).
 
 Memperbarui script di VPS yang sudah di-setup:
 
@@ -263,3 +270,4 @@ sudo bash setup.sh        # opsional; jawab port yang SAMA, langkah yang beres d
 | User baru (mis. `deploy`) ditolak SSH padahal key benar | `AllowUsers`: tambahkan namanya di baris `AllowUsers` di `/etc/ssh/sshd_config.d/00-hardening.conf`, lalu `sudo sshd -t && sudo systemctl reload ssh`. Log: `User deploy ... not listed in AllowUsers`. Run ulang `setup.sh` mempertahankan user tambahan ini |
 | `AWAS` sudo tanpa password (`NOPASSWD`) | Biasanya user bawaan cloud di `/etc/sudoers.d/90-cloud-init-users`. Hapus barisnya: `sudo visudo -f FILE`; user yang tidak dipakai: `sudo deluser --remove-home NAMA` (setelah login user-mu + sudo terbukti) |
 | Script berhenti di tengah | Baca baris `BERHENTI` dan log (`/root/setup-vps-*.log`), perbaiki, jalankan ulang |
+| `AWAS` perlu reboot / layanan masih memakai library lama | `sudo needrestart -r a` me-restart layanan yang aman di-restart; sisanya (mis. `dbus`, `systemd-logind`) dan kernel baru: `sudo reboot`, lalu jalankan `cek-keamanan.sh` lagi |

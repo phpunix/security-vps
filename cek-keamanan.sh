@@ -7,7 +7,8 @@
 # (dipasang setup.sh); bisa ditimpa: PORT_SSH=2222 ./cek-keamanan.sh
 #
 # Kode keluar: 0 = semua OK, 1 = ada AWAS, 2 = bagian [root] dilewati (tanpa sudo),
-# 3 = satu-satunya AWAS adalah "Perlu reboot" (pengamanan lengkap, tinggal reboot).
+# 3 = AWAS hanya soal reboot: kernel baru, atau layanan yang masih memakai
+#     library lama (pengamanan lengkap, tinggal reboot).
 set -uo pipefail
 # Output program dibaca script (sshd -T, ufw, fail2ban): paksa bahasa Inggris.
 export LC_ALL=C.UTF-8
@@ -15,9 +16,11 @@ export LC_ALL=C.UTF-8
 # Baris Port terakhir: saat transisi (22 + port baru) yang terakhir adalah port baru.
 PORT_SSH=${PORT_SSH:-$(sed -nE 's/^Port[[:space:]]+([0-9]+).*/\1/p' /etc/ssh/sshd_config.d/00-hardening.conf 2>/dev/null | tail -1)}
 PORT_SSH=${PORT_SSH:-22}   # belum di-setup: port bawaan sshd
-N_OK=0; N_AWAS=0; DAFTAR_AWAS=()
+N_OK=0; N_AWAS=0; N_REBOOT=0; DAFTAR_AWAS=()
 ok()   { printf '  \033[32mOK\033[0m    %s\n' "$*"; N_OK=$((N_OK+1)); }
 awas() { printf '  \033[33mAWAS\033[0m  %s\n' "$*"; N_AWAS=$((N_AWAS+1)); DAFTAR_AWAS+=("$*"); }
+# AWAS yang selesai dengan reboot; kalau hanya ini, kode keluar 3.
+awas_reboot() { awas "$@"; N_REBOOT=$((N_REBOOT+1)); }
 info() { printf '        %s\n' "$*"; }
 judul(){ printf '\n== %s\n' "$*"; }
 
@@ -26,8 +29,19 @@ if sudo -n true 2>/dev/null; then ROOT=1; S="sudo -n"; else ROOT=0; S=""; fi
 
 judul "Sistem"
 . /etc/os-release; info "$PRETTY_NAME, kernel $(uname -r), uptime $(uptime -p), zona waktu $(timedatectl show -p Timezone --value 2>/dev/null || echo '?')"
-PERLU_REBOOT=0
-if [ -f /var/run/reboot-required ]; then awas "Perlu reboot (update kernel/library)"; PERLU_REBOOT=1
+# needrestart -b: kernel, layanan, dan sesi yang masih memakai versi lama. Mode
+# batch hanya membaca, tidak pernah me-restart (juga dengan $nrconf{restart} =
+# 'a'); "-r l" sebagai pengaman tambahan. Dipakai di sini (kernel) dan di
+# bagian Update (layanan).
+nrb=""
+[ $ROOT = 1 ] && [ -x /usr/sbin/needrestart ] && nrb=$($S needrestart -b -r l 2>/dev/null)
+# Kernel baru yang belum dipakai: reboot-required ditulis hook kernel
+# unattended-upgrades (Debian) / update-notifier (Ubuntu); needrestart
+# membandingkan langsung kernel yang jalan dengan yang terpasang
+# (KSTA 2 = update ABI, 3 = versi baru).
+ksta=$(sed -n 's/^NEEDRESTART-KSTA: //p' <<<"$nrb")
+if [ -f /var/run/reboot-required ]; then awas_reboot "Perlu reboot (update kernel/library)"
+elif [[ $ksta == [23] ]]; then awas_reboot "Perlu reboot: kernel baru sudah terpasang, yang jalan masih $(uname -r)"
 else ok "Tidak perlu reboot"; fi
 
 judul "SSH"
@@ -290,7 +304,12 @@ if [ $ROOT = 1 ]; then
     grep -oE 'Accepted publickey for \S+ from \S+ port [0-9]+ ssh2: \S+ \S+' <<<"$j" \
         | awk '{print $4, $6, $NF}' | sort | uniq -c | sed 's/^/          /'
     grep -q 'Accepted password' <<<"$j" && awas "Ada login dengan PASSWORD!" || ok "Tidak ada login dengan password"
-    info "Percobaan gagal/invalid: $(grep -cE 'Invalid user|Failed |Connection closed by (authenticating|invalid) user' <<<"$j")"
+    # Dihitung per koneksi (IP + port klien): satu percobaan menulis beberapa
+    # baris (mis. "Invalid user" lalu "Connection closed"). Uji login gagal dari
+    # localhost (setup.sh langkah 9) tidak dihitung.
+    n_gagal=$(grep -E 'Invalid user|Failed |(Connection closed by|Disconnected from) (authenticating|invalid) user' <<<"$j" \
+        | grep -oE '[0-9a-fA-F.:]+ port [0-9]+' | grep -vE '^(127\.0\.0\.1|::1) ' | sort -u | wc -l)
+    info "Percobaan login gagal/invalid: $n_gagal koneksi (uji dari localhost tidak dihitung)"
 fi
 # Ubuntu 26.04 dan Debian 13: "last" tidak lagi ada di util-linux; penggantinya
 # paket wtmpdb (perintah "wtmpdb last").
@@ -325,6 +344,26 @@ elif [[ $nr =~ $re_a ]] || { [ -z "$nr" ] && grep -qs -- '-m u' /etc/apt/apt.con
 else
     awas "needrestart hanya mendaftar layanan yang perlu restart, tidak me-restart (jalankan ulang setup.sh)"
 fi
+# Kondisi nyata, bukan hanya pengaturan di atas. Yang dikecualikan
+# needrestart.conf (dbus, systemd-logind, getty, user@, docker) tidak pernah
+# di-restart otomatis; yang lain biasanya sisa update sebelum needrestart
+# dipasang. Sesi login hilang sendiri saat logout.
+if [ $ROOT = 1 ] && [ -x /usr/sbin/needrestart ]; then
+    if ! grep -q '^NEEDRESTART-VER:' <<<"$nrb"; then
+        awas "needrestart -b gagal dijalankan (cek: sudo needrestart -b)"
+    else
+        svc=$(sed -n 's/^NEEDRESTART-SVC: //p' <<<"$nrb" | paste -sd' ')
+        sesi=$(sed -n 's/^NEEDRESTART-SESS: //p' <<<"$nrb" | paste -sd',' | sed 's/,/, /g')
+        if [ -z "$svc" ]; then ok "Tidak ada layanan yang masih memakai library lama"
+        else
+            awas_reboot "Layanan masih memakai library lama: $svc"
+            info "Perbaiki: sudo needrestart -r a (restart yang aman); sisanya (mis. dbus, systemd-logind): sudo reboot"
+        fi
+        [ -z "$sesi" ] || info "Sesi login yang masih memakai library lama: $sesi (hilang setelah logout)"
+    fi
+elif [ $ROOT = 0 ]; then
+    info "[root] pemeriksaan library lama (needrestart -b) dilewati"
+fi
 
 judul "Port yang dipesan (ip_local_reserved_ports)"
 info "$(cat /proc/sys/net/ipv4/ip_local_reserved_ports 2>/dev/null || echo -)"
@@ -335,5 +374,5 @@ for a in "${DAFTAR_AWAS[@]}"; do info "  - AWAS: $a"; done
 echo
 [ $ROOT = 1 ] || { info "Bagian [root] dilewati: hasil belum lengkap."; exit 2; }
 [ "$N_AWAS" = 0 ] && exit 0
-[ "$N_AWAS" = 1 ] && [ $PERLU_REBOOT = 1 ] && { info "Satu-satunya AWAS: perlu reboot (sudo reboot)."; exit 3; }
+[ "$N_AWAS" = "$N_REBOOT" ] && { info "AWAS yang tersisa hanya soal reboot: sudo reboot, lalu jalankan lagi."; exit 3; }
 exit 1

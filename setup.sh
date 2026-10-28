@@ -1146,14 +1146,20 @@ fi
 # cek-keamanan.sh memeriksa satu per satu: root login & password mati, port,
 # keepalive, aturan UFW (port baru LIMIT v4/v6, tanpa aturan 22), port 22
 # tertutup, dan jail sshd/sshd-lambat/recidive aktif dengan port yang benar.
-# Kode keluar 0 = semua OK, 1 = ada AWAS, 3 = satu-satunya AWAS "Perlu reboot".
-# Kode 3 tidak menggagalkan setup: pengamanannya sudah lengkap, tinggal reboot.
+# Kode keluar 0 = semua OK, 1 = ada AWAS, 3 = AWAS hanya soal reboot (kernel
+# baru, atau layanan seperti dbus yang masih memakai library lama dari upgrade
+# langkah 1). Kode 3 tidak menggagalkan setup: pengamanannya sudah lengkap,
+# tinggal reboot. Kode keluar dicatat ke file: run menjalankan perintah di
+# ujung kiri pipa (subshell), jadi variabel tidak sampai ke sini.
+RC_CEK=$(mktemp)
 if ! CMD_LABEL="env PORT_SSH=$PORT bash $REPO/cek-keamanan.sh" run "Verifikasi akhir (cek-keamanan.sh)" bash -c \
-        'PORT_SSH="$1" bash "$2"; rc=$?; [ "$rc" = 3 ] && { echo "(satu-satunya AWAS: perlu reboot)"; exit 0; }; exit "$rc"' \
-        _ "$PORT" "$REPO/cek-keamanan.sh"; then
+        'PORT_SSH="$1" bash "$2"; rc=$?; echo "$rc" >"$3"; [ "$rc" = 3 ] && { echo "(AWAS hanya soal reboot)"; exit 0; }; exit "$rc"' \
+        _ "$PORT" "$REPO/cek-keamanan.sh" "$RC_CEK"; then
+    rm -f "$RC_CEK"
     gagal "Verifikasi akhir menemukan AWAS (daftar di bagian Ringkasan di atas). Setup belum dinyatakan beres."
 fi
-if [ $DRY = 0 ] && [ -f /var/run/reboot-required ]; then
+RC_AKHIR=$(cat "$RC_CEK"); rm -f "$RC_CEK"
+if [ "$RC_AKHIR" = 3 ]; then
     ok "Verifikasi akhir: semua pemeriksaan keamanan OK"
     awas "Update kernel/library butuh REBOOT. Setelah login $USERNAME: sudo reboot, lalu login lagi dan jalankan"
     info "    cd ~/${REPO##*/} && sudo -v && ./cek-keamanan.sh"
@@ -1162,11 +1168,11 @@ else
 fi
 
 echo
-# Path key privat di PC pemilik tidak terlihat dari sini: contoh memakai
-# ~/.ssh/ed25519 (default OpenSSH: ~/.ssh/id_ed25519). IdentitiesOnly: hanya key
-# itu yang ditawarkan; tanpa itu ssh mencoba semua key di agent, dan terlalu
-# banyak key berakhir "Too many authentication failures" (dihitung fail2ban).
-KEY_PC='~/.ssh/ed25519'
+# Path key privat di PC pemilik tidak terlihat dari sini: contoh memakai nama
+# default OpenSSH untuk key ed25519. IdentitiesOnly: hanya key itu yang
+# ditawarkan; tanpa itu ssh mencoba semua key di agent, dan terlalu banyak key
+# berakhir "Too many authentication failures" (dihitung fail2ban).
+KEY_PC='~/.ssh/id_ed25519'
 ok "Selesai. Mulai sekarang login: ssh -p $PORT -i $KEY_PC -o IdentitiesOnly=yes $USERNAME@$IP"
 info "Log lengkap: $LOG"
 info "${SESI_INI^} boleh ditutup. Contoh ~/.ssh/config di PC (nama Host bebas, lalu cukup: ssh nama-vps-bebas):"
@@ -1177,7 +1183,7 @@ info "        Port $PORT"
 info "        IdentityFile $KEY_PC"
 info "        IdentitiesOnly yes"
 info "        AddKeysToAgent yes"
-info "Ganti $KEY_PC dengan path key privat di PC-mu kalau namanya lain (mis. ~/.ssh/id_ed25519)."
+info "Ganti $KEY_PC dengan path key privat di PC-mu kalau namanya lain (mis. ~/.ssh/id_rsa)."
 # Sesi tersimpan dengan user yang kini ditolak (root, user bawaan cloud) yang
 # menyambung ulang otomatis cepat mencapai maxretry fail2ban: IP-mu ke-ban, dan
 # recidive memblokir semua port, termasuk login $USERNAME.
