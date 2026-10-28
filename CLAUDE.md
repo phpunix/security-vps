@@ -1,4 +1,4 @@
-# Panduan Agen - setup-security-vps
+# Panduan Agen - security-vps
 
 Script pengamanan awal VPS Ubuntu/Debian baru (`setup.sh`, dijalankan pemilik
 sebagai root) dan audit `cek-keamanan.sh` (hanya membaca). Lihat `README.md`.

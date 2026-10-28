@@ -1,4 +1,4 @@
-# setup-security-vps
+# security-vps
 
 Pengamanan awal untuk setiap VPS **Ubuntu/Debian baru** (atau habis reinstall)
 yang diserahkan provider dengan akses `root` + SSH key. Satu script interaktif,
@@ -41,7 +41,7 @@ setengah jadi, reboot pasca-setup di ketiga OS, dan ban dari IP asing. Image
 dengan user bawaan cloud (`ubuntu`/`admin`, mis. AWS/Oracle) belum diuji.
 
 ```
-setup-security-vps/
+security-vps/
 ├── setup.sh               script utama (root, interaktif)
 ├── cek-keamanan.sh        audit keamanan, hanya membaca
 ├── files/
@@ -78,8 +78,8 @@ sampai script selesai.
 
 ```bash
 command -v git >/dev/null || apt-get -o DPkg::Lock::Timeout=300 install -y git
-git clone https://github.com/phpunix/setup-security-vps.git
-cd setup-security-vps
+git clone https://github.com/phpunix/security-vps.git
+cd security-vps
 bash setup.sh --dry-run    # lihat alurnya dulu, tidak mengubah apa pun
 bash setup.sh
 ```
@@ -87,8 +87,8 @@ bash setup.sh
 **Tanpa git** (unduh arsip):
 
 ```bash
-curl -fsSL https://github.com/phpunix/setup-security-vps/archive/refs/heads/main.tar.gz | tar xz
-mv setup-security-vps-main setup-security-vps && cd setup-security-vps && bash setup.sh
+curl -fsSL https://github.com/phpunix/security-vps/archive/refs/heads/main.tar.gz | tar xz
+mv security-vps-main security-vps && cd security-vps && bash setup.sh
 ```
 
 (Versi arsip tidak bisa di-`git pull`; untuk update, unduh ulang atau pakai git.)
@@ -96,8 +96,8 @@ mv setup-security-vps-main setup-security-vps && cd setup-security-vps && bash s
 **Dari PC** (repo private, atau tanpa internet ke GitHub):
 
 ```bash
-scp -r setup-security-vps root@IP-VPS:/root/      # di PC
-bash /root/setup-security-vps/setup.sh            # di sesi root VPS
+scp -r security-vps root@IP-VPS:/root/      # di PC
+bash /root/security-vps/setup.sh            # di sesi root VPS
 ```
 
 ## 3. Alur script
@@ -188,14 +188,14 @@ Pengaman lain:
 
 ```bash
 ssh -p PORT USER@IP-VPS
-cat ~/setup-vps-log/*.log                     # log semua run, tanpa sudo
+cat ~/security-vps-log/*.log                     # log semua run, tanpa sudo
 sudo reboot                                    # lalu login lagi:
-cd ~/setup-security-vps && sudo -v && ./cek-keamanan.sh; echo "EXIT=$?"
+cd ~/security-vps && sudo -v && ./cek-keamanan.sh; echo "EXIT=$?"
 ```
 
-Hasil harus `0 AWAS` (`EXIT=0`). Repo ikut disalin ke `~/setup-security-vps` (milik
-user), dan log tiap run tersimpan di `/root/setup-vps-*.log` + salinannya di
-`~/setup-vps-log/`.
+Hasil harus `0 AWAS` (`EXIT=0`). Repo ikut disalin ke `~/security-vps` (milik
+user), dan log tiap run tersimpan di `/root/security-vps-log/` + salinannya di
+`~/security-vps-log/`.
 
 Lalu:
 
@@ -231,7 +231,7 @@ Lalu:
 ## 5. Pemeriksaan rutin dan update
 
 ```bash
-cd ~/setup-security-vps && sudo -v && ./cek-keamanan.sh   # mis. sebulan sekali
+cd ~/security-vps && sudo -v && ./cek-keamanan.sh   # mis. sebulan sekali
 sudo fail2ban-client status sshd
 sudo grep -E ' Ban | Unban ' /var/log/fail2ban.log | tail -20
 last -n 10 -a                                          # kalau tidak ada: sudo apt install wtmpdb
@@ -254,7 +254,7 @@ library lama).
 Memperbarui script di VPS yang sudah di-setup:
 
 ```bash
-cd ~/setup-security-vps && git pull
+cd ~/security-vps && git pull
 sudo bash setup.sh        # opsional; jawab port yang SAMA, langkah yang beres dilewati
 ```
 
@@ -269,5 +269,5 @@ sudo bash setup.sh        # opsional; jawab port yang SAMA, langkah yang beres d
 | Lupa password sudo user | Console provider sebagai root: `passwd USER` |
 | User baru (mis. `deploy`) ditolak SSH padahal key benar | `AllowUsers`: tambahkan namanya di baris `AllowUsers` di `/etc/ssh/sshd_config.d/00-hardening.conf`, lalu `sudo sshd -t && sudo systemctl reload ssh`. Log: `User deploy ... not listed in AllowUsers`. Run ulang `setup.sh` mempertahankan user tambahan ini |
 | `AWAS` sudo tanpa password (`NOPASSWD`) | Biasanya user bawaan cloud di `/etc/sudoers.d/90-cloud-init-users`. Hapus barisnya: `sudo visudo -f FILE`; user yang tidak dipakai: `sudo deluser --remove-home NAMA` (setelah login user-mu + sudo terbukti) |
-| Script berhenti di tengah | Baca baris `BERHENTI` dan log (`/root/setup-vps-*.log`), perbaiki, jalankan ulang |
+| Script berhenti di tengah | Baca baris `BERHENTI` dan log (`/root/security-vps-log/`), perbaiki, jalankan ulang |
 | `AWAS` perlu reboot / layanan masih memakai library lama | `sudo needrestart -r a` me-restart layanan yang aman di-restart; sisanya (mis. `dbus`, `systemd-logind`) dan kernel baru: `sudo reboot`, lalu jalankan `cek-keamanan.sh` lagi |

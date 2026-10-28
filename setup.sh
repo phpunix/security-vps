@@ -1,17 +1,18 @@
 #!/usr/bin/env bash
-# setup-security-vps: pengamanan awal VPS baru secara interaktif, dijalankan
+# security-vps: pengamanan awal VPS baru secara interaktif, dijalankan
 # sebagai ROOT. Teruji di Ubuntu 24.04, Ubuntu 26.04, Debian 13. Berhenti
 # meminta konfirmasi di setiap titik yang bisa membuat kamu terkunci (lihat README.md).
 #
-#   git clone https://github.com/phpunix/setup-security-vps.git   # di sesi root VPS baru
-#   bash setup-security-vps/setup.sh                              # sesi root JANGAN ditutup sampai selesai
+#   git clone https://github.com/phpunix/security-vps.git   # di sesi root VPS baru
+#   bash security-vps/setup.sh                              # sesi root JANGAN ditutup sampai selesai
 #
 # Nama user dan port SSH wajib diketik (tanpa default). Default lainnya (cukup
 # Enter): swap 4G, whitelist = IP yang sedang kamu pakai (terdeteksi otomatis
 # dari sesi SSH; tanpa whitelist kalau tidak terdeteksi), zona waktu Asia/Jakarta.
 #
 # Tiap aksi tampil berurutan: [>] judul, output perintah langsung, lalu status
-# [✓] BERHASIL / [✗] GAGAL + lama eksekusi. Semua juga direkam di /root/setup-vps-TANGGAL-JAM.log.
+# [✓] BERHASIL / [✗] GAGAL + lama eksekusi. Semua juga direkam di
+# /root/security-vps-log/setup-TANGGAL-JAM.log (salinan untuk user: ~/security-vps-log/).
 # Aman dijalankan ulang: langkah yang sudah beres dilewati.
 # Lihat alurnya tanpa mengubah apa pun:  bash setup.sh --dry-run
 set -Eeuo pipefail
@@ -34,8 +35,10 @@ export NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none UCF_FORCE_CONFFOLD=1
 # Lock::Timeout: tunggu kalau dpkg sedang dipakai unattended-upgrades/cloud-init.
 # (Lock::Timeout bawaan Ubuntu hanya untuk perintah "apt", bukan "apt-get".)
 APT=(apt-get -y -o DPkg::Lock::Timeout=300 -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold)
-if [ $DRY = 1 ]; then LOG=${TMPDIR:-/tmp}/setup-vps-dry-run-$(date +%Y%m%d-%H%M%S).log
-else LOG=/root/setup-vps-$(date +%Y%m%d-%H%M%S).log; fi
+# Log tiap run: /root/security-vps-log/ (salinan untuk user: ~/security-vps-log/).
+LOG_DIR=/root/security-vps-log
+if [ $DRY = 1 ]; then LOG=${TMPDIR:-/tmp}/security-vps-dry-run-$(date +%Y%m%d-%H%M%S).log
+else LOG=$LOG_DIR/setup-$(date +%Y%m%d-%H%M%S).log; fi
 GAGAL_DESC=""
 
 H_=$'\033[1m' HIJ=$'\033[32m' MER=$'\033[31m' KUN=$'\033[33m' RED=$'\033[2m' N_=$'\033[0m'
@@ -302,21 +305,23 @@ tambah_baris() {
         '[ ! -s "$1" ] || [ -z "$(tail -c 1 "$1")" ] || printf "\n" >>"$1"; printf "%s\n" "$2" >>"$1"' _ "$2" "$3"
 }
 
-# salin_log: salinan log untuk user baru (~/setup-vps-log/, milik user, izin 600),
-# supaya bisa dibaca tanpa sudo setelah login root mati. Dilewati kalau user
+# salin_log: salinan log untuk user baru (~/security-vps-log/, izin 600), supaya
+# bisa dibaca tanpa sudo setelah login root mati. Ditulis dengan hak user itu
+# sendiri (runuser), bukan root: kalau ~/security-vps-log diganti symlink ke
+# folder sistem, root tidak ikut menaruh file di sana. Dilewati kalau user
 # belum ada (script berhenti sebelum langkah 2) atau dry-run. Log run
 # sebelumnya yang belum tersalin (mis. run yang berhenti untuk reboot setelah
 # upgrade, sebelum user dibuat) ikut disalin.
 LOG_USER=""
 salin_log() {
     [ $DRY = 0 ] && [ -n "${USERNAME:-}" ] && [ -n "${H:-}" ] && [ -d "$H" ] && id "$USERNAME" &>/dev/null || return 0
-    local d="$H/setup-vps-log" f
-    install -d -m 700 -o "$USERNAME" -g "$USERNAME" "$d" 2>/dev/null || return 0
-    for f in "${LOG%/*}"/setup-vps-*.log; do
+    local d="$H/security-vps-log" f
+    runuser -u "$USERNAME" -- sh -c 'cd / && mkdir -p "$1" && chmod 700 "$1"' _ "$d" 2>/dev/null || return 0
+    for f in "$LOG_DIR"/setup-*.log; do
         [ -f "$f" ] || continue
         # Log run ini selalu disalin ulang (isinya bertambah); log lama hanya sekali.
         [ "$f" = "$LOG" ] || [ ! -e "$d/${f##*/}" ] || continue
-        install -m 600 -o "$USERNAME" -g "$USERNAME" "$f" "$d/${f##*/}" 2>/dev/null || continue
+        runuser -u "$USERNAME" -- sh -c 'cd / && umask 077 && cat >"$1" && chmod 600 "$1"' _ "$d/${f##*/}" <"$f" 2>/dev/null || continue
         [ "$f" != "$LOG" ] || LOG_USER="$d/${f##*/}"
     done
 }
@@ -333,7 +338,7 @@ berhenti() {
         [ -z "$LOG_USER" ] || printf '    Salinan log : %s (bisa dibaca %s tanpa sudo)\n' "$LOG_USER" "$USERNAME"
         printf '    Jangan tutup %s; perbaiki penyebabnya lalu jalankan ulang script.\n' "${SESI_INI:-sesi root ini}"
     elif [ -n "$LOG_USER" ]; then
-        printf '    Salinan log : %s (bisa dibaca %s tanpa sudo: cat ~/setup-vps-log/%s)\n' \
+        printf '    Salinan log : %s (bisa dibaca %s tanpa sudo: cat ~/security-vps-log/%s)\n' \
             "$LOG_USER" "$USERNAME" "${LOG##*/}"
     fi
 }
@@ -356,8 +361,9 @@ terapkan_ssh() {
 }
 
 # ---------------------------------------------------------------------------
+[ $DRY = 1 ] || install -d -m 700 "$LOG_DIR"
 : >"$LOG"; chmod 600 "$LOG"
-catat "setup-vps.sh $(date '+%F %T')"
+catat "security-vps setup.sh $(date '+%F %T')"
 langkah "0. Pemeriksaan awal"
 if [ $DRY = 1 ]; then
     awas "MODE --dry-run: tidak ada yang diubah, perintah hanya ditampilkan"
@@ -592,9 +598,9 @@ yakin "Lanjut?" y || exit 0
 # KONF      : konfigurasi akhir, hanya Port $PORT (langkah 8).
 ALLOW_SED=${ALLOW//\//\\/}   # "/" dari CIDR (user@10.0.0.0/8) adalah pemisah sed
 KONF=$(sed -e "s/^Port .*/Port $PORT/" -e "s/^AllowUsers .*/AllowUsers $ALLOW_SED/" "$REPO/files/00-hardening.conf")
-KONF_TRANSISI=$(sed -e "s/^Port .*/# SEMENTARA (setup-security-vps): Port 22 dihapus setelah login port $PORT dikonfirmasi.\nPort 22\nPort $PORT/" \
+KONF_TRANSISI=$(sed -e "s/^Port .*/# SEMENTARA (security-vps): Port 22 dihapus setelah login port $PORT dikonfirmasi.\nPort 22\nPort $PORT/" \
     -e "s/^AllowUsers .*/AllowUsers $ALLOW_SED/" "$REPO/files/00-hardening.conf")
-KONF_AWAL=$(sed -e "s/^Port .*/# AWAL (setup-security-vps): login password mati; root masih boleh dengan key sampai langkah 6.\nPort 22/" \
+KONF_AWAL=$(sed -e "s/^Port .*/# AWAL (security-vps): login password mati; root masih boleh dengan key sampai langkah 6.\nPort 22/" \
     -e "s/^PermitRootLogin .*/PermitRootLogin prohibit-password/" \
     -e "s/^AllowUsers .*/# AllowUsers $USERNAME dipasang mulai langkah 6./" "$REPO/files/00-hardening.conf")
 SSH_ADA=0; SSH_LAMA=""
@@ -849,7 +855,7 @@ if systemctl is-active -q systemd-resolved 2>/dev/null \
    && ss -tulnH 2>/dev/null | awk '{print $5}' | grep -E ':(5355|5353)$' >/dev/null; then
     run "Buat /etc/systemd/resolved.conf.d" install -d -m 755 /etc/systemd/resolved.conf.d
     tulis "Matikan LLMNR & mDNS di systemd-resolved" /etc/systemd/resolved.conf.d/00-tanpa-llmnr.conf 644 <<'EOF'
-# Dari setup-security-vps: LLMNR/mDNS tidak dibutuhkan di VPS (port 5355/5353).
+# Dari security-vps: LLMNR/mDNS tidak dibutuhkan di VPS (port 5355/5353).
 [Resolve]
 LLMNR=no
 MulticastDNS=no
@@ -907,7 +913,7 @@ done
 # Reset password dari panel tidak terpengaruh (ssh_pwauth hanya mengatur sshd).
 CLOUD_PW=/etc/cloud/cloud.cfg.d/99-ssh-tanpa-password.cfg
 if [ -d /etc/cloud/cloud.cfg.d ]; then
-    ISI_CLOUD_PW='# Dari setup-security-vps: login password SSH tetap mati walaupun cloud-init
+    ISI_CLOUD_PW='# Dari security-vps: login password SSH tetap mati walaupun cloud-init
 # menulis ulang /etc/ssh/sshd_config.d/50-cloud-init.conf (instance baru).
 ssh_pwauth: false'
     if [ "$(cat "$CLOUD_PW" 2>/dev/null)" = "$ISI_CLOUD_PW" ]; then
@@ -1022,7 +1028,7 @@ if [ "$ID" = debian ]; then
     # Debian minimal tanpa rsyslog tidak punya /var/log/auth.log: baca sshd dari
     # journal, dan ban lewat nftables seperti default Ubuntu.
     tulis "Pasang 00-debian.local (journal + nftables)" /etc/fail2ban/jail.d/00-debian.local 644 <<'EOF'
-# Dari setup-security-vps: samakan dengan default Ubuntu 24.04.
+# Dari security-vps: samakan dengan default Ubuntu 24.04.
 [DEFAULT]
 banaction = nftables
 banaction_allports = nftables[type=allports]
@@ -1034,7 +1040,7 @@ fi
 if [ -n "$WL" ]; then
     # Dibaca terakhir ("zz-") sehingga menimpa ignoreip per jail di sshd-lambat.local.
     tulis "Whitelist $WL di fail2ban (ketiga jail)" /etc/fail2ban/jail.d/zz-whitelist.local 644 <<EOF
-# Dari setup-security-vps: $WL tidak pernah di-ban (dipilih pemilik saat setup).
+# Dari security-vps: $WL tidak pernah di-ban (dipilih pemilik saat setup).
 # Cabut: hapus file ini lalu systemctl reload fail2ban, dan
 #        ufw delete allow proto tcp from $WL to any port $PORT
 [sshd]
@@ -1121,7 +1127,7 @@ if grep -qs -- '-m u' /etc/apt/apt.conf.d/99needrestart; then
     ok "needrestart me-restart layanan otomatis setelah update (mode Ubuntu)"
 else
     ISI_NR=$(cat <<'EOF'
-# Dari setup-security-vps: setelah update, restart otomatis layanan yang masih
+# Dari security-vps: setelah update, restart otomatis layanan yang masih
 # memakai library lama (bawaan Debian tanpa terminal: hanya mendaftar).
 $nrconf{restart} = 'a';
 # Info kernel baru cukup teks, tanpa dialog; reboot tetap manual.
