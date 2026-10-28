@@ -14,7 +14,7 @@ export LC_ALL=C.UTF-8
 
 # Baris Port terakhir: saat transisi (22 + port baru) yang terakhir adalah port baru.
 PORT_SSH=${PORT_SSH:-$(sed -nE 's/^Port[[:space:]]+([0-9]+).*/\1/p' /etc/ssh/sshd_config.d/00-hardening.conf 2>/dev/null | tail -1)}
-PORT_SSH=${PORT_SSH:-2222}
+PORT_SSH=${PORT_SSH:-22}   # belum di-setup: port bawaan sshd
 N_OK=0; N_AWAS=0; DAFTAR_AWAS=()
 ok()   { printf '  \033[32mOK\033[0m    %s\n' "$*"; N_OK=$((N_OK+1)); }
 awas() { printf '  \033[33mAWAS\033[0m  %s\n' "$*"; N_AWAS=$((N_AWAS+1)); DAFTAR_AWAS+=("$*"); }

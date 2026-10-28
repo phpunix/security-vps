@@ -1,4 +1,4 @@
-# Panduan Agen - setup-awal-vps
+# Panduan Agen - setup-security-vps
 
 Script pengamanan awal VPS Ubuntu/Debian baru (`setup.sh`, dijalankan pemilik
 sebagai root) dan audit `cek-keamanan.sh` (hanya membaca). Lihat `README.md`.
@@ -36,3 +36,7 @@ sebagai root) dan audit `cek-keamanan.sh` (hanya membaca). Lihat `README.md`.
 
 - Komunikasi dalam bahasa Indonesia.
 - Git: jangan commit kecuali diminta, jangan push, jangan menambah remote.
+- Repo ini untuk publik (GitHub): jangan menulis data pemilik (IP, nama user,
+  port SSH asli, hostname) di file maupun pesan commit. Pakai placeholder
+  (`USER`, `PORT`, `IP-VPS`) di dokumen dan nilai contoh di template
+  (`namauser`, `2222`; nilainya selalu diganti `setup.sh`).

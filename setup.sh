@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
-# setup-awal-vps: pengamanan awal VPS baru secara interaktif, dijalankan sebagai
-# ROOT. Teruji di Ubuntu 24.04, Ubuntu 26.04, Debian 13. Berhenti meminta
-# konfirmasi di setiap titik yang bisa membuat kamu terkunci (lihat README.md).
+# setup-security-vps: pengamanan awal VPS baru secara interaktif, dijalankan
+# sebagai ROOT. Teruji di Ubuntu 24.04, Ubuntu 26.04, Debian 13. Berhenti
+# meminta konfirmasi di setiap titik yang bisa membuat kamu terkunci (lihat README.md).
 #
-#   git clone https://github.com/AKUN/setup-awal-vps.git   # di sesi root VPS baru
-#   bash setup-awal-vps/setup.sh                            # sesi root JANGAN ditutup sampai selesai
+#   git clone https://github.com/AKUN/setup-security-vps.git   # di sesi root VPS baru
+#   bash setup-security-vps/setup.sh                        # sesi root JANGAN ditutup sampai selesai
+#
+# Nama user dan port SSH wajib diketik (tanpa default). Default lainnya (cukup
+# Enter): swap 4G, whitelist = IP yang sedang kamu pakai (terdeteksi otomatis
+# dari sesi SSH; tanpa whitelist kalau tidak terdeteksi), zona waktu Asia/Jakarta.
 #
 # Tiap aksi tampil berurutan: [>] judul, output perintah langsung, lalu status
 # [✓] BERHASIL / [✗] GAGAL + lama eksekusi. Semua juga direkam di /root/setup-vps-TANGGAL-JAM.log.
@@ -142,8 +146,21 @@ tulis() {
     fi
     CMD_LABEL="tulis $2" run "$1" bash -c 'printf "%s\n" "$1" >"$2" && chmod "$3" "$2"' _ "$isi" "$2" "$3"
 }
-# tanya VAR "pertanyaan" default
-tanya()  { local j; read -r -p "    $2 [$3]: " j; printf -v "$1" '%s' "${j:-$3}"; catat "    $2 -> ${!1}"; }
+# tanya_wajib VAR "pertanyaan"  -> tanpa default: jawaban kosong ditanya ulang
+tanya_wajib(){
+    local j
+    while :; do
+        read -r -p "    $2: " j; catat "    $2 -> $j"
+        [ -n "$j" ] && break
+        awas "Wajib diketik (tidak ada default)."
+    done
+    printf -v "$1" '%s' "$j"
+}
+# tanya VAR "pertanyaan" default  (Enter = default; di log ditandai "(default)")
+tanya()  {
+    local j d=""; read -r -p "    $2 [$3]: " j; printf -v "$1" '%s' "${j:-$3}"
+    [ -n "$j" ] || d=" (default)"; catat "    $2 -> ${!1}$d"
+}
 # yakin "pertanyaan" y|n  -> sukses kalau jawabannya ya
 yakin()  {
     local j p=y/N; [ "$2" = y ] && p=Y/n
@@ -395,7 +412,20 @@ fi
 [[ $IP =~ ^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\.) ]] \
     && awas "IP $IP adalah IP privat (NAT); di instruksi login, ganti dengan IP publik dari panel provider."
 
-tanya USERNAME "Nama user non-root" namauser
+# Nilai default (Enter). Whitelist: IP sesi SSH yang menjalankan script,
+# terdeteksi otomatis oleh deteksi_sesi (SSH_CONNECTION, atau journal kalau
+# lewat sudo); tanpa whitelist kalau tidak terdeteksi (mis. web console).
+# Nama user dan port SSH sengaja tanpa default: wajib diketik pemilik.
+DEF_SWAP=4G DEF_ZONA=Asia/Jakarta DEF_WL=${KLIEN:--}
+info "Nama user dan port SSH wajib diketik. Nilai default lainnya (cukup tekan Enter):"
+info "  swap        $DEF_SWAP (tidak ditanya kalau swap sudah ada)"
+if [ -n "$KLIEN" ]; then
+    info "  whitelist   $KLIEN (IP yang sedang kamu pakai, terdeteksi otomatis)"
+else
+    info "  whitelist   tidak ada (IP-mu tidak terdeteksi)"
+fi
+info "  zona waktu  $DEF_ZONA"
+tanya_wajib USERNAME "Nama user non-root (wajib diketik)"
 [[ $USERNAME =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] && [ "$USERNAME" != root ] || gagal "Nama user tidak valid: $USERNAME"
 H=$(getent passwd "$USERNAME" | cut -d: -f6 || true); H=${H:-/home/$USERNAME}
 AK=$H/.ssh/authorized_keys
@@ -441,7 +471,7 @@ if [ -n "$LAIN" ]; then
     info "(AllowUsers); sesi yang sedang terbuka tidak terputus. Setelah itu masuk sebagai $USERNAME."
 fi
 
-tanya PORT "Port SSH baru (1024-65535)" 2222
+tanya_wajib PORT "Port SSH baru, 1024-65535 (wajib diketik)"
 [[ $PORT =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] || gagal "Port tidak valid: $PORT"
 # Ganti port saat run ulang tidak didukung: transisi memakai port 22 sebagai
 # jalan kembali, padahal setelah setup selesai 22 sudah ditutup dan port lama
@@ -466,7 +496,7 @@ SWAP_ADA=0
 if swapon --show --noheadings | grep . >/dev/null; then
     SWAP=0; SWAP_ADA=1; info "Swap sudah ada, langkah swap dilewati"
 else
-    tanya SWAP "Ukuran swap, misalnya 2G/4G (0 = tanpa swap)" 4G
+    tanya SWAP "Ukuran swap, misalnya 2G/4G (0 = tanpa swap)" "$DEF_SWAP"
     [[ $SWAP =~ ^(0|[1-9][0-9]*[MG])$ ]] || gagal "Ukuran swap tidak valid: $SWAP"
 fi
 
@@ -474,8 +504,8 @@ fi
 # koneksi paralel dan kena "limit" UFW (6 koneksi baru / 30 detik).
 info "Whitelist IP: IP ini lolos dari rate-limit UFW dan tidak pernah di-ban fail2ban."
 info "  Hati-hati: IP VPN biasanya dipakai bersama banyak orang; mereka ikut lolos"
-info "  (login tetap wajib key). IP yang sedang kamu pakai: ${KLIEN:-tidak terdeteksi}"
-tanya WL "IP yang di-whitelist (- = tidak ada)" "${KLIEN:--}"
+info "  (login tetap wajib key). IP yang sedang kamu pakai (terdeteksi otomatis): ${KLIEN:-tidak terdeteksi}"
+tanya WL "IP yang di-whitelist (- = tidak ada)" "$DEF_WL"
 [ "$WL" = - ] && WL=""
 if [ -n "$WL" ]; then
     if [[ $WL =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
@@ -486,13 +516,59 @@ if [ -n "$WL" ]; then
 fi
 
 # Zona waktu: jam di log (journal, fail2ban, nginx) dan jadwal cron/timer.
-# "-" = biarkan seperti sekarang.
+# Boleh diketik bebas: nama lengkap (Asia/Jakarta, huruf besar/kecil bebas),
+# nama kota (makassar, "new york"), WIB/WITA/WIT, UTC/GMT, atau selisih jam
+# bulat (GMT+7, UTC+7, +7, +07:00). "-" = biarkan seperti sekarang.
+daftar_zona() {
+    local d
+    d=$(timedatectl list-timezones 2>/dev/null || true)
+    # Tanpa timedatectl/dbus: daftar dari tzdata (Z = zona, L = nama alias).
+    [ -n "$d" ] || d=$(awk '$1 == "Z" {print $2} $1 == "L" {print $3}' /usr/share/zoneinfo/tzdata.zi 2>/dev/null || true)
+    printf '%s\n' "$d"
+}
+# zona_calon INPUT: cetak zona yang cocok (0, 1, atau beberapa baris).
+zona_calon() {
+    local x u s j daftar kota
+    read -r x <<<"$1"; x=${x// /_}; u=${x^^}
+    case $u in
+        WIB) echo Asia/Jakarta; return 0;;
+        WITA) echo Asia/Makassar; return 0;;
+        WIT) echo Asia/Jayapura; return 0;;
+        UTC|GMT) echo Etc/UTC; return 0;;
+    esac
+    # Selisih jam bulat -> Etc/GMT-N. Tanda di nama Etc/GMT dibalik (aturan
+    # POSIX): Etc/GMT-7 = UTC+7. Selisih tidak bulat (+05:30): pakai nama kota.
+    if [[ ${u//_/} =~ ^(UTC|GMT)?([+-])([0-9]{1,2})(:?00)?$ ]]; then
+        s=${BASH_REMATCH[2]}; j=$((10#${BASH_REMATCH[3]}))
+        if [ "$j" = 0 ]; then echo Etc/UTC
+        elif [ "$s" = + ] && [ -f "/usr/share/zoneinfo/Etc/GMT-$j" ]; then echo "Etc/GMT-$j"
+        elif [ "$s" = - ] && [ -f "/usr/share/zoneinfo/Etc/GMT+$j" ]; then echo "Etc/GMT+$j"
+        fi
+        return 0
+    fi
+    daftar=$(daftar_zona)
+    # Nama kota: cocokkan bagian terakhir (Asia/Makassar -> makassar).
+    if [[ $x != */* ]]; then
+        kota=$(awk -F/ -v x="${x,,}" 'NF > 1 && tolower($NF) == x' <<<"$daftar")
+        if [ -n "$kota" ]; then printf '%s\n' "$kota"; return 0; fi
+    fi
+    awk -v x="${x,,}" 'tolower($0) == x' <<<"$daftar"
+}
 ZONA_LAMA=$(timedatectl show -p Timezone --value 2>/dev/null || true)
-tanya ZONA "Zona waktu (- = tetap ${ZONA_LAMA:-seperti sekarang})" Asia/Jakarta
-[ "$ZONA" = - ] && ZONA=$ZONA_LAMA
+while :; do
+    tanya ZONA "Zona waktu: kota, WIB/WITA/WIT, UTC, GMT+7 (- = tetap ${ZONA_LAMA:-seperti sekarang})" "$DEF_ZONA"
+    if [ "$ZONA" = - ]; then ZONA=$ZONA_LAMA; break; fi
+    calon=$(zona_calon "$ZONA")
+    case $(awk 'NF {n++} END {print n + 0}' <<<"$calon") in
+        1) ZONA=$calon; break;;
+        0) awas "Zona waktu tidak dikenal: $ZONA (contoh: Jakarta, WIB/WITA/WIT, UTC, GMT+7, Asia/Singapore; kota yang tidak ada di daftar, mis. Surabaya: pakai WIB/WITA/WIT)";;
+        *) awas "\"$ZONA\" cocok dengan beberapa zona: $(paste -sd' ' <<<"$calon"). Ketik salah satu.";;
+    esac
+done
 if [ -n "$ZONA" ]; then
     [[ $ZONA =~ ^[A-Za-z0-9_+-]+(/[A-Za-z0-9_+-]+)*$ ]] && [ -f "/usr/share/zoneinfo/$ZONA" ] \
-        || gagal "Zona waktu tidak dikenal: $ZONA (contoh: Asia/Jakarta, Asia/Makassar, Asia/Jayapura, UTC)"
+        || gagal "Zona waktu tidak dikenal: $ZONA"
+    info "Zona waktu $ZONA: jam di sana sekarang $(TZ=$ZONA date '+%H:%M %Z, UTC%:z')"
 fi
 
 echo
@@ -516,9 +592,9 @@ yakin "Lanjut?" y || exit 0
 # KONF      : konfigurasi akhir, hanya Port $PORT (langkah 8).
 ALLOW_SED=${ALLOW//\//\\/}   # "/" dari CIDR (user@10.0.0.0/8) adalah pemisah sed
 KONF=$(sed -e "s/^Port .*/Port $PORT/" -e "s/^AllowUsers .*/AllowUsers $ALLOW_SED/" "$REPO/files/00-hardening.conf")
-KONF_TRANSISI=$(sed -e "s/^Port .*/# SEMENTARA (setup-awal-vps): Port 22 dihapus setelah login port $PORT dikonfirmasi.\nPort 22\nPort $PORT/" \
+KONF_TRANSISI=$(sed -e "s/^Port .*/# SEMENTARA (setup-security-vps): Port 22 dihapus setelah login port $PORT dikonfirmasi.\nPort 22\nPort $PORT/" \
     -e "s/^AllowUsers .*/AllowUsers $ALLOW_SED/" "$REPO/files/00-hardening.conf")
-KONF_AWAL=$(sed -e "s/^Port .*/# AWAL (setup-awal-vps): login password mati; root masih boleh dengan key sampai langkah 6.\nPort 22/" \
+KONF_AWAL=$(sed -e "s/^Port .*/# AWAL (setup-security-vps): login password mati; root masih boleh dengan key sampai langkah 6.\nPort 22/" \
     -e "s/^PermitRootLogin .*/PermitRootLogin prohibit-password/" \
     -e "s/^AllowUsers .*/# AllowUsers $USERNAME dipasang mulai langkah 6./" "$REPO/files/00-hardening.conf")
 SSH_ADA=0; SSH_LAMA=""
@@ -773,7 +849,7 @@ if systemctl is-active -q systemd-resolved 2>/dev/null \
    && ss -tulnH 2>/dev/null | awk '{print $5}' | grep -E ':(5355|5353)$' >/dev/null; then
     run "Buat /etc/systemd/resolved.conf.d" install -d -m 755 /etc/systemd/resolved.conf.d
     tulis "Matikan LLMNR & mDNS di systemd-resolved" /etc/systemd/resolved.conf.d/00-tanpa-llmnr.conf 644 <<'EOF'
-# Dari setup-awal-vps: LLMNR/mDNS tidak dibutuhkan di VPS (port 5355/5353).
+# Dari setup-security-vps: LLMNR/mDNS tidak dibutuhkan di VPS (port 5355/5353).
 [Resolve]
 LLMNR=no
 MulticastDNS=no
@@ -831,7 +907,7 @@ done
 # Reset password dari panel tidak terpengaruh (ssh_pwauth hanya mengatur sshd).
 CLOUD_PW=/etc/cloud/cloud.cfg.d/99-ssh-tanpa-password.cfg
 if [ -d /etc/cloud/cloud.cfg.d ]; then
-    ISI_CLOUD_PW='# Dari setup-awal-vps: login password SSH tetap mati walaupun cloud-init
+    ISI_CLOUD_PW='# Dari setup-security-vps: login password SSH tetap mati walaupun cloud-init
 # menulis ulang /etc/ssh/sshd_config.d/50-cloud-init.conf (instance baru).
 ssh_pwauth: false'
     if [ "$(cat "$CLOUD_PW" 2>/dev/null)" = "$ISI_CLOUD_PW" ]; then
@@ -946,7 +1022,7 @@ if [ "$ID" = debian ]; then
     # Debian minimal tanpa rsyslog tidak punya /var/log/auth.log: baca sshd dari
     # journal, dan ban lewat nftables seperti default Ubuntu.
     tulis "Pasang 00-debian.local (journal + nftables)" /etc/fail2ban/jail.d/00-debian.local 644 <<'EOF'
-# Dari setup-awal-vps: samakan dengan default Ubuntu 24.04.
+# Dari setup-security-vps: samakan dengan default Ubuntu 24.04.
 [DEFAULT]
 banaction = nftables
 banaction_allports = nftables[type=allports]
@@ -958,7 +1034,7 @@ fi
 if [ -n "$WL" ]; then
     # Dibaca terakhir ("zz-") sehingga menimpa ignoreip per jail di sshd-lambat.local.
     tulis "Whitelist $WL di fail2ban (ketiga jail)" /etc/fail2ban/jail.d/zz-whitelist.local 644 <<EOF
-# Dari setup-awal-vps: $WL tidak pernah di-ban (dipilih pemilik saat setup).
+# Dari setup-security-vps: $WL tidak pernah di-ban (dipilih pemilik saat setup).
 # Cabut: hapus file ini lalu systemctl reload fail2ban, dan
 #        ufw delete allow proto tcp from $WL to any port $PORT
 [sshd]
@@ -1045,7 +1121,7 @@ if grep -qs -- '-m u' /etc/apt/apt.conf.d/99needrestart; then
     ok "needrestart me-restart layanan otomatis setelah update (mode Ubuntu)"
 else
     ISI_NR=$(cat <<'EOF'
-# Dari setup-awal-vps: setelah update, restart otomatis layanan yang masih
+# Dari setup-security-vps: setelah update, restart otomatis layanan yang masih
 # memakai library lama (bawaan Debian tanpa terminal: hanya mendaftar).
 $nrconf{restart} = 'a';
 # Info kernel baru cukup teks, tanpa dialog; reboot tetap manual.

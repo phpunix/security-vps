@@ -1,4 +1,4 @@
-# setup-awal-vps
+# setup-security-vps
 
 Pengamanan awal untuk setiap VPS **Ubuntu/Debian baru** (atau habis reinstall)
 yang diserahkan provider dengan akses `root` + SSH key. Satu script interaktif,
@@ -6,8 +6,8 @@ dijalankan sekali sebagai root sebelum VPS dipakai untuk proyek apa pun.
 
 | Bagian | Hasil |
 |---|---|
-| User | user non-root (default `namauser`, grup `sudo`), login hanya dengan SSH key |
-| SSH | port pilihanmu (default **2222**), root login mati, password login mati, sesi "hantu" diputus ~3 menit |
+| User | user non-root pilihanmu (grup `sudo`), login hanya dengan SSH key |
+| SSH | port pilihanmu, root login mati, password login mati, sesi "hantu" diputus ~3 menit |
 | Firewall | UFW: tolak semua koneksi masuk kecuali port SSH (rate-limit) |
 | Brute-force | fail2ban: jail `sshd`, `sshd-lambat` (serangan pelan), `recidive` (pelaku berulang, semua port), ban bertingkat |
 | Lainnya | swap, update keamanan otomatis (layanan yang masih memakai library lama di-restart otomatis oleh `needrestart`), key root dinonaktifkan |
@@ -35,7 +35,7 @@ setengah jadi, reboot pasca-setup di ketiga OS, dan ban dari IP asing. Image
 dengan user bawaan cloud (`ubuntu`/`admin`, mis. AWS/Oracle) belum diuji.
 
 ```
-setup-awal-vps/
+setup-security-vps/
 ├── setup.sh               script utama (root, interaktif)
 ├── cek-keamanan.sh        audit keamanan, hanya membaca
 ├── files/
@@ -56,7 +56,7 @@ publik. Whitelist IP yang kamu pilih saat setup hanya tersimpan di VPS.
 - **Login root dengan SSH key** dari PC sudah bisa (`ssh root@IP-VPS`). Key ini
   yang nanti disalin ke user baru.
 - **Firewall di panel provider** (kalau ada, mis. Hetzner Cloud Firewall):
-  selama setup izinkan TCP **22 dan port baru** (default 2222).
+  selama setup izinkan TCP **22 dan port baru** (yang akan kamu ketik di script).
 - Tahu cara membuka **web console** (VNC/serial) di panel provider. Itu jalan
   darurat kalau SSH bermasalah, dan memakai **password root**: simpan, atau
   ganti saat script menawarkan.
@@ -72,8 +72,8 @@ sampai script selesai.
 
 ```bash
 command -v git >/dev/null || apt-get -o DPkg::Lock::Timeout=300 install -y git
-git clone https://github.com/AKUN/setup-awal-vps.git
-cd setup-awal-vps
+git clone https://github.com/AKUN/setup-security-vps.git
+cd setup-security-vps
 bash setup.sh --dry-run    # lihat alurnya dulu, tidak mengubah apa pun
 bash setup.sh
 ```
@@ -81,8 +81,8 @@ bash setup.sh
 **Tanpa git** (unduh arsip):
 
 ```bash
-curl -fsSL https://github.com/AKUN/setup-awal-vps/archive/refs/heads/main.tar.gz | tar xz
-mv setup-awal-vps-main setup-awal-vps && cd setup-awal-vps && bash setup.sh
+curl -fsSL https://github.com/AKUN/setup-security-vps/archive/refs/heads/main.tar.gz | tar xz
+mv setup-security-vps-main setup-security-vps && cd setup-security-vps && bash setup.sh
 ```
 
 (Versi arsip tidak bisa di-`git pull`; untuk update, unduh ulang atau pakai git.)
@@ -90,16 +90,27 @@ mv setup-awal-vps-main setup-awal-vps && cd setup-awal-vps && bash setup.sh
 **Dari PC** (repo private, atau tanpa internet ke GitHub):
 
 ```bash
-scp -r setup-awal-vps root@IP-VPS:/root/      # di PC
-bash /root/setup-awal-vps/setup.sh            # di sesi root VPS
+scp -r setup-security-vps root@IP-VPS:/root/      # di PC
+bash /root/setup-security-vps/setup.sh            # di sesi root VPS
 ```
 
 Ganti `AKUN` dengan akun GitHub-mu.
 
 ## 3. Alur script
 
-Script menanyakan nama user, port SSH, ukuran swap, whitelist IP, dan zona
-waktu (default `Asia/Jakarta`; `-` = tidak diubah), lalu:
+Nama user dan port SSH wajib diketik (tanpa default, Enter kosong ditanya
+ulang). Pertanyaan lain punya default; cukup tekan Enter untuk memakainya (di
+log ditandai `(default)`):
+
+| Pertanyaan | Default |
+|---|---|
+| Nama user non-root | tidak ada, **wajib diketik** |
+| Port SSH | tidak ada, **wajib diketik** (1024-65535) |
+| Swap | `4G` (`0` = tanpa swap; tidak ditanya kalau swap sudah ada) |
+| Whitelist IP | IP yang sedang kamu pakai, **terdeteksi otomatis** dari sesi SSH yang menjalankan script (juga lewat `sudo`). Kalau tidak terdeteksi (mis. web console): tanpa whitelist. `-` = tanpa whitelist |
+| Zona waktu | `Asia/Jakarta` (`-` = tidak diubah). Boleh diketik bebas: nama kota (`Makassar`, `new york`), `WIB`/`WITA`/`WIT`, `UTC`, selisih jam bulat (`GMT+7`, `UTC-5`), atau nama lengkap (`Asia/Singapore`); huruf besar/kecil bebas, isian yang tidak dikenal ditanya ulang |
+
+Lalu:
 
 | Langkah | Isi |
 |---|---|
@@ -175,10 +186,10 @@ Pengaman lain:
 ssh -p PORT USER@IP-VPS
 cat ~/setup-vps-log/*.log                     # log semua run, tanpa sudo
 sudo reboot                                    # lalu login lagi:
-cd ~/setup-awal-vps && sudo -v && ./cek-keamanan.sh; echo "EXIT=$?"
+cd ~/setup-security-vps && sudo -v && ./cek-keamanan.sh; echo "EXIT=$?"
 ```
 
-Hasil harus `0 AWAS` (`EXIT=0`). Repo ikut disalin ke `~/setup-awal-vps` (milik
+Hasil harus `0 AWAS` (`EXIT=0`). Repo ikut disalin ke `~/setup-security-vps` (milik
 user), dan log tiap run tersimpan di `/root/setup-vps-*.log` + salinannya di
 `~/setup-vps-log/`.
 
@@ -194,8 +205,8 @@ Lalu:
   ```
   Host vps
       HostName IP-VPS
-      Port 2222
-      User namauser
+      Port PORT
+      User USER
   ```
 
   Hapus sesi `root` lama di klien SSH-mu: percobaan login root yang terus
@@ -206,7 +217,7 @@ Lalu:
 ## 5. Pemeriksaan rutin dan update
 
 ```bash
-cd ~/setup-awal-vps && sudo -v && ./cek-keamanan.sh   # mis. sebulan sekali
+cd ~/setup-security-vps && sudo -v && ./cek-keamanan.sh   # mis. sebulan sekali
 sudo fail2ban-client status sshd
 sudo grep -E ' Ban | Unban ' /var/log/fail2ban.log | tail -20
 last -n 10 -a                                          # kalau tidak ada: sudo apt install wtmpdb
@@ -226,7 +237,7 @@ satu-satunya AWAS "Perlu reboot".
 Memperbarui script di VPS yang sudah di-setup:
 
 ```bash
-cd ~/setup-awal-vps && git pull
+cd ~/setup-security-vps && git pull
 sudo bash setup.sh        # opsional; jawab port yang SAMA, langkah yang beres dilewati
 ```
 
