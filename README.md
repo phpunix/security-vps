@@ -7,7 +7,7 @@ dijalankan sekali sebagai root sebelum VPS dipakai untuk proyek apa pun.
 | Bagian | Hasil |
 |---|---|
 | User | user non-root pilihanmu (grup `sudo`), login hanya dengan SSH key |
-| SSH | port pilihanmu, root login mati, password login mati, sesi "hantu" diputus ~3 menit |
+| SSH | port pilihanmu, root login mati, password login mati, X11 & agent forwarding mati, sesi "hantu" diputus ~3 menit |
 | Firewall | UFW: tolak semua koneksi masuk kecuali port SSH (rate-limit) |
 | Brute-force | fail2ban: jail `sshd`, `sshd-lambat` (serangan pelan), `recidive` (pelaku berulang, semua port), ban bertingkat |
 | Lainnya | swap, update keamanan otomatis (layanan yang masih memakai library lama di-restart otomatis oleh `needrestart`), key root dinonaktifkan |

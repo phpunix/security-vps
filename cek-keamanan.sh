@@ -49,10 +49,11 @@ if [ $ROOT = 1 ]; then
     # clientalive*: sesi "hantu" (VPN ganti, PC sleep) diputus dalam ~3 menit.
     declare -A mau=([port]=$PORT_SSH [permitrootlogin]=no [passwordauthentication]=no
                     [kbdinteractiveauthentication]=no [pubkeyauthentication]=yes [permitemptypasswords]=no
-                    [clientaliveinterval]=60 [clientalivecountmax]=3)
+                    [clientaliveinterval]=60 [clientalivecountmax]=3
+                    [x11forwarding]=no [allowagentforwarding]=no)
     efektif=$($S sshd -T 2>/dev/null)
     for k in port permitrootlogin passwordauthentication kbdinteractiveauthentication pubkeyauthentication \
-             permitemptypasswords clientaliveinterval clientalivecountmax; do
+             permitemptypasswords clientaliveinterval clientalivecountmax x11forwarding allowagentforwarding; do
         v=$(awk -v k="$k" '$1==k{print $2; exit}' <<<"$efektif")
         [ "$v" = "${mau[$k]}" ] && ok "$k $v" || awas "$k $v (harusnya ${mau[$k]})"
     done
