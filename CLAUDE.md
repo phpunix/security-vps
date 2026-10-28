@@ -40,3 +40,8 @@ sebagai root) dan audit `cek-keamanan.sh` (hanya membaca). Lihat `README.md`.
   port SSH asli, hostname) di file maupun pesan commit. Pakai placeholder
   (`USER`, `PORT`, `IP-VPS`) di dokumen dan nilai contoh di template
   (`namauser`, `2222`; nilainya selalu diganti `setup.sh`).
+- Pembuat commit selalu `phpunix <phpunix@users.noreply.github.com>`. Kalau
+  identitas git belum diatur: `git -c user.name=phpunix -c
+  user.email=phpunix@users.noreply.github.com commit ...`. Jangan pakai email
+  login Claude Code atau tebakan git dari hostname (`user@hostname`): metadata
+  commit ikut publik saat di-push.
