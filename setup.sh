@@ -1162,13 +1162,22 @@ else
 fi
 
 echo
-ok "Selesai. Mulai sekarang login: ssh -p $PORT $USERNAME@$IP"
+# Path key privat di PC pemilik tidak terlihat dari sini: contoh memakai
+# ~/.ssh/ed25519 (default OpenSSH: ~/.ssh/id_ed25519). IdentitiesOnly: hanya key
+# itu yang ditawarkan; tanpa itu ssh mencoba semua key di agent, dan terlalu
+# banyak key berakhir "Too many authentication failures" (dihitung fail2ban).
+KEY_PC='~/.ssh/ed25519'
+ok "Selesai. Mulai sekarang login: ssh -p $PORT -i $KEY_PC -o IdentitiesOnly=yes $USERNAME@$IP"
 info "Log lengkap: $LOG"
-info "${SESI_INI^} boleh ditutup. Contoh ~/.ssh/config di PC:"
-info "    Host vps"
+info "${SESI_INI^} boleh ditutup. Contoh ~/.ssh/config di PC (nama Host bebas, lalu cukup: ssh nama-vps-bebas):"
+info "    Host nama-vps-bebas"
 info "        HostName $IP"
-info "        Port $PORT"
 info "        User $USERNAME"
+info "        Port $PORT"
+info "        IdentityFile $KEY_PC"
+info "        IdentitiesOnly yes"
+info "        AddKeysToAgent yes"
+info "Ganti $KEY_PC dengan path key privat di PC-mu kalau namanya lain (mis. ~/.ssh/id_ed25519)."
 # Sesi tersimpan dengan user yang kini ditolak (root, user bawaan cloud) yang
 # menyambung ulang otomatis cepat mencapai maxretry fail2ban: IP-mu ke-ban, dan
 # recidive memblokir semua port, termasuk login $USERNAME.

@@ -27,7 +27,9 @@ setelah reboot. Image BeroHost membawa `PermitRootLogin yes` dan
 `PasswordAuthentication yes` dari provider; keduanya diubah jadi `no`. Di
 Ubuntu 24.04 juga teruji: run ulang di atas setup versi lama (wajib lewat
 transisi + uji login lagi) dan run ulang dengan user tambahan di `AllowUsers`
-(dipertahankan). Zona waktu (langkah 1) teruji di Debian 13.
+(dipertahankan). Zona waktu (langkah 1) teruji di Debian 13. Versi dengan
+`needrestart`, daftar default, nama user/port wajib diketik, dan zona waktu
+bebas teruji dari awal di Hetzner Debian 13 (0 AWAS).
 
 Juga teruji (Hetzner, versi sebelumnya): uji login port baru yang gagal
 (port 22 tetap bisa dipakai, tidak terkunci), menjalankan ulang dari kondisi
@@ -203,16 +205,26 @@ Lalu:
 - **Klien SSH di PC** (`~/.ssh/config`):
 
   ```
-  Host vps
+  Host nama-vps-bebas
       HostName IP-VPS
-      Port PORT
       User USER
+      Port PORT
+      IdentityFile ~/.ssh/ed25519
+      IdentitiesOnly yes
+      AddKeysToAgent yes
   ```
+
+  Nama `Host` bebas; login cukup `ssh nama-vps-bebas`. Tanpa config:
+  `ssh -p PORT -i ~/.ssh/ed25519 -o IdentitiesOnly=yes USER@IP-VPS`. Ganti
+  `~/.ssh/ed25519` dengan key privat di PC-mu (default OpenSSH:
+  `~/.ssh/id_ed25519`). `IdentitiesOnly` membuat ssh hanya menawarkan key itu:
+  terlalu banyak key di agent berakhir "Too many authentication failures", yang
+  dihitung login gagal oleh fail2ban.
 
   Hapus sesi `root` lama di klien SSH-mu: percobaan login root yang terus
   ditolak bisa membuat IP-mu sendiri ke-ban.
 - Aplikasi web sebaiknya listen di `127.0.0.1` dan diakses lewat tunnel SSH
-  (`ssh -L 8080:127.0.0.1:8080 vps`), supaya tidak perlu membuka port lain.
+  (`ssh -L 8080:127.0.0.1:8080 nama-vps-bebas`), supaya tidak perlu membuka port lain.
 
 ## 5. Pemeriksaan rutin dan update
 
